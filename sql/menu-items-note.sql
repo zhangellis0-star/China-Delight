@@ -1,0 +1,3 @@
+-- Menu items are intentionally stored in data/menu.ts for easy editing from the website code.
+-- If you want Supabase-managed menu editing later, create a menu_items table with columns:
+-- id, number, name, category, description, spicy, prices jsonb, options jsonb, is_available boolean.
