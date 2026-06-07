@@ -105,10 +105,6 @@ export default function CheckoutPage() {
       setPaymentError(`${closedOrderingMessage} ${nextOpeningLabel()}`);
       return;
     }
-    if (!phoneVerified) {
-      setVerifyMessage({ type: "error", text: "Please verify your phone number before placing the order." });
-      return;
-    }
     if (!customer.paymentMethod) {
       setPaymentError("Please choose a payment method to continue.");
       return;
@@ -165,13 +161,13 @@ export default function CheckoutPage() {
           <div className="rounded-md border border-stone-200 bg-china-paper p-4">
             <div className="flex items-center gap-2 font-black">
               <ShieldCheck className="h-5 w-5 text-china-red" />
-              Verify phone number
+              Optional phone verification
             </div>
             {phoneVerified ? (
-              <p className="mt-3 inline-flex items-center gap-2 rounded-md bg-green-50 px-3 py-2 text-sm font-bold text-green-700">Phone verified ✓</p>
+              <p className="mt-3 inline-flex items-center gap-2 rounded-md bg-green-50 px-3 py-2 text-sm font-bold text-green-700">Phone verified.</p>
             ) : (
               <div className="mt-3 grid gap-3">
-                <p className="text-sm leading-6 text-stone-700">We verify your phone so we can reach you about your order. Enter your number above, then request a code.</p>
+                <p className="text-sm leading-6 text-stone-700">Phone verification is optional for now, but please enter a valid phone number so we can contact you about your order.</p>
                 <button type="button" onClick={handleSendCode} disabled={verifyBusy} className="focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-china-red px-4 py-2 font-bold text-china-red disabled:opacity-60">
                   {codeSent ? "Resend verification code" : "Send verification code"}
                 </button>
