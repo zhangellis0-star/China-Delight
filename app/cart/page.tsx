@@ -3,15 +3,18 @@
 import Link from "next/link";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { useCart } from "@/components/cart/cart-provider";
+import { customizationText } from "@/lib/order-display";
+import { closedOrderingMessage, isRestaurantOpen, nextOpeningLabel } from "@/lib/order-rules";
 import { calculateCart, formatPrice } from "@/lib/pricing";
 
 export default function CartPage() {
   const { items, updateQuantity, updateNotes, removeItem } = useCart();
   const totals = calculateCart(items);
+  const orderingOpen = isRestaurantOpen();
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <h1 className="text-4xl font-black">Your cart</h1>
+      <h1 className="text-3xl font-black sm:text-4xl">Your cart</h1>
       {items.length === 0 ? (
         <div className="mt-8 rounded-lg border border-stone-200 bg-white p-8 text-center">
           <p className="text-lg font-bold">Your cart is empty.</p>
@@ -29,14 +32,8 @@ export default function CartPage() {
                     <p className="font-black text-china-red">#{item.number}</p>
                     <h2 className="text-xl font-black">{item.name}</h2>
                     <p className="mt-1 text-sm text-stone-600">
-                      Size: {item.customization.size} {item.customization.rice ? `| Rice: ${item.customization.rice}` : ""} | Spice: {item.customization.spiceLevel ?? "None"}
+                      {customizationText(item.customization)}
                     </p>
-                    {item.customization.addOns && item.customization.addOns.length > 0 && <p className="mt-1 text-sm text-stone-600">Add-ons: {item.customization.addOns.join(", ")}</p>}
-                    {(item.customization.sauceOnSide || item.customization.noOnion || item.customization.noBroccoli) && (
-                      <p className="mt-1 text-sm text-stone-600">
-                        {[item.customization.sauceOnSide ? "Sauce on side" : "", item.customization.noOnion ? "No onion" : "", item.customization.noBroccoli ? "No broccoli" : ""].filter(Boolean).join(", ")}
-                      </p>
-                    )}
                   </div>
                   <p className="text-xl font-black">{formatPrice(item.unitPrice * item.quantity)}</p>
                 </div>
@@ -74,14 +71,29 @@ export default function CartPage() {
                 <span>Tax</span>
                 <span>{formatPrice(totals.tax)}</span>
               </div>
+              <div className="flex justify-between">
+                <span>Processing fee</span>
+                <span>{formatPrice(totals.processingFee)}</span>
+              </div>
               <div className="flex justify-between border-t border-stone-200 pt-3 text-2xl font-black">
                 <span>Total</span>
                 <span>{formatPrice(totals.total)}</span>
               </div>
             </div>
-            <Link href="/checkout" className="focus-ring mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-md bg-china-red px-5 py-3 font-black text-white">
-              Checkout
-            </Link>
+            {!orderingOpen && (
+              <p className="mt-5 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
+                {closedOrderingMessage} {nextOpeningLabel()}
+              </p>
+            )}
+            {orderingOpen ? (
+              <Link href="/checkout" className="focus-ring mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-md bg-china-red px-5 py-3 font-black text-white">
+                Checkout
+              </Link>
+            ) : (
+              <span className="mt-6 inline-flex min-h-12 w-full cursor-not-allowed items-center justify-center rounded-md bg-stone-400 px-5 py-3 font-black text-white">
+                Checkout unavailable
+              </span>
+            )}
           </aside>
         </div>
       )}

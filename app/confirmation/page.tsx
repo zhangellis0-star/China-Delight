@@ -14,7 +14,7 @@ export default function ConfirmationPage() {
         <ConfirmationNumber />
       </Suspense>
       <p className="mt-6 text-lg leading-8 text-stone-700">
-        Please call {restaurant.phone} if you need to change anything. Save this order number for pickup or delivery questions.
+        Please call {restaurant.phone} if you need to change anything. Save this order number for pickup questions.
       </p>
       <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
         <Link href="/order" className="focus-ring inline-flex min-h-12 items-center justify-center rounded-md bg-china-red px-5 py-3 font-black text-white">

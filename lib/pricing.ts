@@ -10,7 +10,7 @@ export function formatMenuPrice(value: MenuPrice | undefined) {
 }
 
 export function defaultSize(item: MenuItem): MenuPriceKey {
-  const preferred: MenuPriceKey[] = ["order", "pint", "quart", "combo", "large", "small"];
+  const preferred: MenuPriceKey[] = ["small", "pint", "order", "combo", "quart", "large"];
   return preferred.find((key) => item.prices[key] !== undefined) ?? "order";
 }
 
@@ -30,9 +30,11 @@ export function customizationUpcharge(addOns: string[] = []) {
 export function calculateCart(items: CartItem[]) {
   const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const tax = subtotal * restaurant.taxRate;
+  const processingFee = subtotal * restaurant.processingFeeRate;
   return {
     subtotal,
     tax,
-    total: subtotal + tax
+    processingFee,
+    total: subtotal + tax + processingFee
   };
 }

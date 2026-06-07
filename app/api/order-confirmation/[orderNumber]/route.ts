@@ -10,7 +10,7 @@ export async function GET(_request: Request, { params }: { params: { orderNumber
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "order_number, customer_name, customer_phone, customer_email, customer_notes, payment_method, pickup_time_type, scheduled_pickup_time, subtotal, tax, total, order_items(item_number, item_name, quantity, unit_price, customization)"
+      "order_number, customer_name, customer_phone, customer_email, customer_notes, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, subtotal, tax, processing_fee, total, order_items(item_number, item_name, quantity, unit_price, customization)"
     )
     .eq("order_number", params.orderNumber)
     .single();

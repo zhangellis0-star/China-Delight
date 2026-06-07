@@ -39,13 +39,21 @@ export type MenuItem = {
     rice?: boolean;
     size?: MenuPriceKey[];
     addOns?: boolean;
+    lunchChoices?: boolean;
+    comboIncluded?: boolean;
   };
 };
+
+export type LunchRiceChoice = "Pork Fried Rice" | "White Rice";
+export type LunchSideChoice = "Egg Roll" | "Wonton Soup" | "Egg Drop Soup" | "Canned Soda";
 
 export type CartCustomization = {
   size: MenuPriceKey;
   spiceLevel?: "None" | "Mild" | "Medium" | "Hot" | "Extra Hot";
   rice?: "White Rice" | "Fried Rice" | "Pork Fried Rice" | "No Rice";
+  lunchRice?: LunchRiceChoice;
+  lunchSide?: LunchSideChoice;
+  includedItems?: string[];
   addOns?: string[];
   sauceOnSide?: boolean;
   noOnion?: boolean;
@@ -64,6 +72,13 @@ export type CartItem = {
   customization: CartCustomization;
 };
 
+export type CartTotals = {
+  subtotal: number;
+  tax: number;
+  processingFee: number;
+  total: number;
+};
+
 export type OrderStatus = "new" | "accepted" | "preparing" | "ready" | "completed" | "cancelled";
 export type PaymentMethod = "stripe" | "pay_at_pickup";
 export type PaymentStatus = "unpaid" | "paid" | "failed" | "refunded";
@@ -73,7 +88,7 @@ export type CheckoutCustomer = {
   name: string;
   phone: string;
   email?: string;
-  fulfillment: "pickup" | "delivery";
+  fulfillment: "pickup";
   address?: string;
   notes?: string;
   paymentMethod: PaymentMethod;

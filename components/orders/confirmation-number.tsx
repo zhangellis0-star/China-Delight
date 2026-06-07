@@ -2,15 +2,18 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { customizationText } from "@/lib/order-display";
+import { estimatedPickupWindow } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
+import { restaurant } from "@/lib/restaurant";
 import { useCart } from "@/components/cart/cart-provider";
-import type { CartItem, CheckoutCustomer } from "@/types";
+import type { CartItem, CheckoutCustomer, PaymentStatus } from "@/types";
 
 type LastOrder = {
   orderNumber: string;
   customer: CheckoutCustomer;
   items: CartItem[];
-  totals: { subtotal: number; tax: number; total: number };
+  totals: { subtotal: number; tax: number; processingFee?: number; total: number };
 };
 
 type SupabaseConfirmationOrder = {
@@ -20,10 +23,12 @@ type SupabaseConfirmationOrder = {
   customer_email?: string | null;
   customer_notes?: string | null;
   payment_method: "stripe" | "pay_at_pickup";
+  payment_status?: PaymentStatus;
   pickup_time_type: "asap" | "scheduled";
   scheduled_pickup_time?: string | null;
   subtotal: number;
   tax: number;
+  processing_fee?: number | null;
   total: number;
   order_items: Array<{
     item_number: string;
@@ -85,25 +90,38 @@ export function ConfirmationNumber() {
             <strong>Customer:</strong> {supabaseOrder.customer_name}
           </p>
           <p>
-            <strong>Payment:</strong> {supabaseOrder.payment_method === "stripe" ? "Paid online / Stripe" : "Pay at pickup / cash"}
+            <strong>Payment:</strong> {supabaseOrder.payment_method === "stripe" ? `Stripe / ${supabaseOrder.payment_status ?? "unpaid"}` : "Pay at pickup / cash"}
           </p>
           <p>
             <strong>Pickup time:</strong> {supabasePickupTime(supabaseOrder)}
+          </p>
+          <p>
+            <strong>Estimated pickup:</strong> {estimatedPickupWindow(supabaseOrder.order_items)}
           </p>
           <div>
             <strong>Items:</strong>
             <div className="mt-2 grid gap-2">
               {supabaseOrder.order_items.map((item, index) => (
-                <div key={`${item.item_number}-${index}`} className="flex justify-between gap-3 rounded-md bg-china-paper p-3">
+                <div key={`${item.item_number}-${index}`} className="flex flex-col justify-between gap-2 rounded-md bg-china-paper p-3 sm:flex-row">
                   <span>
                     {item.quantity} x #{item.item_number} {item.item_name}
+                    {customizationText(item.customization) && <span className="block text-sm text-stone-600">{customizationText(item.customization)}</span>}
+                    {item.customization?.notes ? <span className="block text-sm font-bold text-stone-700">Notes: {String(item.customization.notes)}</span> : null}
                   </span>
                   <span className="font-bold">{formatPrice(item.unit_price * item.quantity)}</span>
                 </div>
               ))}
             </div>
           </div>
-          <p className="text-right text-2xl font-black">Total: {formatPrice(supabaseOrder.total)}</p>
+          <div className="grid gap-1 border-t border-stone-200 pt-3 text-right">
+            <p>Subtotal: {formatPrice(supabaseOrder.subtotal)}</p>
+            <p>Tax: {formatPrice(supabaseOrder.tax)}</p>
+            <p>Processing fee: {formatPrice(supabaseOrder.processing_fee ?? 0)}</p>
+            <p className="text-2xl font-black">Total: {formatPrice(supabaseOrder.total)}</p>
+          </div>
+          <div className="rounded-md bg-red-50 p-3 text-sm font-bold text-china-red">
+            Call us if you need to change your order: {restaurant.phone}. {restaurant.address}.
+          </div>
         </div>
       ) : lastOrder ? (
         <div className="mt-5 grid gap-3 text-stone-800">
@@ -116,20 +134,33 @@ export function ConfirmationNumber() {
           <p>
             <strong>Pickup time:</strong> {pickupTime(lastOrder.customer)}
           </p>
+          <p>
+            <strong>Estimated pickup:</strong> {estimatedPickupWindow(lastOrder.items)}
+          </p>
           <div>
             <strong>Items:</strong>
             <div className="mt-2 grid gap-2">
               {lastOrder.items.map((item) => (
-                <div key={item.cartId} className="flex justify-between gap-3 rounded-md bg-china-paper p-3">
+                <div key={item.cartId} className="flex flex-col justify-between gap-2 rounded-md bg-china-paper p-3 sm:flex-row">
                   <span>
                     {item.quantity} x #{item.number} {item.name}
+                    {customizationText(item.customization) && <span className="block text-sm text-stone-600">{customizationText(item.customization)}</span>}
+                    {item.customization.notes ? <span className="block text-sm font-bold text-stone-700">Notes: {item.customization.notes}</span> : null}
                   </span>
                   <span className="font-bold">{formatPrice(item.unitPrice * item.quantity)}</span>
                 </div>
               ))}
             </div>
           </div>
-          <p className="text-right text-2xl font-black">Total: {formatPrice(lastOrder.totals.total)}</p>
+          <div className="grid gap-1 border-t border-stone-200 pt-3 text-right">
+            <p>Subtotal: {formatPrice(lastOrder.totals.subtotal)}</p>
+            <p>Tax: {formatPrice(lastOrder.totals.tax)}</p>
+            <p>Processing fee: {formatPrice(lastOrder.totals.processingFee ?? 0)}</p>
+            <p className="text-2xl font-black">Total: {formatPrice(lastOrder.totals.total)}</p>
+          </div>
+          <div className="rounded-md bg-red-50 p-3 text-sm font-bold text-china-red">
+            Call us if you need to change your order: {restaurant.phone}. {restaurant.address}.
+          </div>
         </div>
       ) : null}
     </div>

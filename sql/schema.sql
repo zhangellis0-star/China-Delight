@@ -63,6 +63,7 @@ create table if not exists public.orders (
   payment_status payment_status not null default 'unpaid',
   subtotal numeric(10, 2) not null,
   tax numeric(10, 2) not null,
+  processing_fee numeric(10, 2) not null default 0,
   total numeric(10, 2) not null,
   stripe_session_id text,
   created_at timestamptz not null default now(),
@@ -74,6 +75,7 @@ alter table public.orders add column if not exists pickup_time_type pickup_time_
 alter table public.orders add column if not exists scheduled_pickup_time timestamptz;
 alter table public.orders add column if not exists payment_status payment_status not null default 'unpaid';
 alter table public.orders add column if not exists stripe_session_id text;
+alter table public.orders add column if not exists processing_fee numeric(10, 2) not null default 0;
 alter table public.orders alter column customer_email drop not null;
 
 create table if not exists public.order_items (
@@ -95,8 +97,23 @@ create index if not exists orders_customer_phone_idx on public.orders(customer_p
 create index if not exists order_items_order_id_idx on public.order_items(order_id);
 create index if not exists order_items_item_name_idx on public.order_items using gin (to_tsvector('english', item_name));
 
+-- Temporary store for SMS phone-verification codes. Rows expire after 10 minutes (enforced in app code).
+create table if not exists public.phone_verifications (
+  id uuid primary key default gen_random_uuid(),
+  phone text not null,
+  code text not null,
+  attempts integer not null default 0,
+  verified boolean not null default false,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists phone_verifications_phone_idx on public.phone_verifications(phone);
+create index if not exists phone_verifications_expires_at_idx on public.phone_verifications(expires_at);
+
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
+alter table public.phone_verifications enable row level security;
 
 -- The app uses the service role key on the server for admin reads/writes.
 -- Public browser clients do not receive direct table access by default.

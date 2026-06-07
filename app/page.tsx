@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MapPin, Phone, Star } from "lucide-react";
 import { ButtonLink } from "@/components/button-link";
+import { DeliveryPlatforms } from "@/components/delivery-platforms";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
 import { menuItems } from "@/data/menu";
 import { restaurant } from "@/lib/restaurant";
@@ -16,7 +17,7 @@ export default function HomePage() {
             <p className="text-sm font-black uppercase tracking-[0.2em] text-china-gold">{restaurant.type}</p>
             <h1 className="mt-4 text-5xl font-black leading-tight sm:text-6xl lg:text-7xl">{restaurant.name}</h1>
             <p className="mt-5 max-w-xl text-xl leading-8 text-red-50">
-              Fresh Chinese favorites for pickup, delivery, take out, and dine in at Ledgbrook Plaza in Winsted.
+              Fresh Chinese favorites for pickup, take out, and dine in at Ledgbrook Plaza in Winsted.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <ButtonLink href="/order" className="bg-china-gold text-china-ink">
@@ -59,6 +60,8 @@ export default function HomePage() {
         </div>
       </section>
 
+      <DeliveryPlatforms />
+
       <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
@@ -91,9 +94,9 @@ export default function HomePage() {
           <div className="rounded-lg border border-stone-200 bg-china-paper p-5">
             <div className="flex items-center gap-2 text-china-red">
               <Star className="h-5 w-5 fill-current" />
-              <p className="font-black">Easy pickup and delivery</p>
+              <p className="font-black">Easy pickup ordering</p>
             </div>
-            <p className="mt-3 text-lg leading-8 text-stone-700">Order online, review your total, pay securely, and receive an order number for pickup or delivery.</p>
+            <p className="mt-3 text-lg leading-8 text-stone-700">Order online for pickup, review your total, pay securely, and receive an order number.</p>
             <div className="mt-5 rounded-md border border-stone-300 bg-white p-4">
               <p className="font-black">{restaurant.address}</p>
               <p className="mt-1 text-stone-600">{restaurant.locationNote}</p>

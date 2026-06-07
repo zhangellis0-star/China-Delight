@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   cookies().set(getAdminCookieName(), signAdminSession(), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https://"),
     path: "/",
     maxAge: 60 * 60 * 12
   });

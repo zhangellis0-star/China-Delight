@@ -1,5 +1,8 @@
 import { MapPin, Phone } from "lucide-react";
+import { DeliveryPlatforms } from "@/components/delivery-platforms";
 import { restaurant } from "@/lib/restaurant";
+
+export const dynamic = "force-dynamic";
 
 export default function ContactPage() {
   const mapSrc = `https://www.google.com/maps?q=${encodeURIComponent(restaurant.mapQuery)}&output=embed`;
@@ -32,6 +35,9 @@ export default function ContactPage() {
           </p>
         </div>
         <iframe title="China Delight map" src={mapSrc} className="min-h-[520px] w-full rounded-lg border border-stone-200 bg-white" loading="lazy" />
+      </div>
+      <div className="mt-8">
+        <DeliveryPlatforms compact />
       </div>
     </section>
   );

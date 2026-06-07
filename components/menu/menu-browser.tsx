@@ -60,7 +60,7 @@ export function MenuBrowser({ orderMode = false }: { orderMode?: boolean }) {
       </div>
 
       <p className="mt-5 font-semibold text-stone-700">{filtered.length} items found</p>
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((item) => (
           <MenuItemCard key={item.id} item={item} orderMode={orderMode} />
         ))}

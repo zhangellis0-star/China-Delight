@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { customizationParts } from "@/lib/order-display";
+import { estimatedPickupWindow } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
-import type { CartItem, OrderStatus, PaymentMethod, PickupTimeType } from "@/types";
+import type { CartItem, OrderStatus, PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
 
 type TicketOrder = {
   order_number: string;
@@ -11,11 +13,13 @@ type TicketOrder = {
   customer_email?: string | null;
   customer_notes?: string | null;
   payment_method?: PaymentMethod;
+  payment_status?: PaymentStatus;
   pickup_time_type?: PickupTimeType;
   scheduled_pickup_time?: string | null;
   status: OrderStatus;
   subtotal: number;
   tax: number;
+  processing_fee?: number | null;
   total: number;
   order_items: Array<{
     item_number: string;
@@ -33,7 +37,7 @@ function localTicket(orderNumber: string): TicketOrder | null {
     orderNumber: string;
     customer: { name: string; phone: string; email?: string; notes?: string; paymentMethod?: PaymentMethod; pickupTimeType?: PickupTimeType; scheduledPickupTime?: string };
     items: CartItem[];
-    totals: { subtotal: number; tax: number; total: number };
+    totals: { subtotal: number; tax: number; processingFee?: number; total: number };
     status: OrderStatus;
   };
   if (parsed.orderNumber !== orderNumber) return null;
@@ -44,11 +48,13 @@ function localTicket(orderNumber: string): TicketOrder | null {
     customer_email: parsed.customer.email,
     customer_notes: parsed.customer.notes,
     payment_method: parsed.customer.paymentMethod,
+    payment_status: "unpaid",
     pickup_time_type: parsed.customer.pickupTimeType,
     scheduled_pickup_time: parsed.customer.scheduledPickupTime,
     status: parsed.status,
     subtotal: parsed.totals.subtotal,
     tax: parsed.totals.tax,
+    processing_fee: parsed.totals.processingFee ?? 0,
     total: parsed.totals.total,
     order_items: parsed.items.map((item) => ({
       item_number: item.number,
@@ -58,22 +64,6 @@ function localTicket(orderNumber: string): TicketOrder | null {
       customization: item.customization
     }))
   };
-}
-
-function customizationText(customization?: Record<string, unknown>) {
-  if (!customization) return "";
-  return [
-    customization.size ? `Size: ${customization.size}` : "",
-    customization.rice ? `Rice: ${customization.rice}` : "",
-    customization.spiceLevel ? `Spice: ${customization.spiceLevel}` : "",
-    customization.sauceOnSide ? "Sauce on side" : "",
-    customization.noOnion ? "No onion" : "",
-    customization.noBroccoli ? "No broccoli" : "",
-    Array.isArray(customization.addOns) && customization.addOns.length ? `Add-ons: ${customization.addOns.join(", ")}` : "",
-    customization.notes ? `Notes: ${customization.notes}` : ""
-  ]
-    .filter(Boolean)
-    .join(" | ");
 }
 
 export function PrintTicket({ orderNumber }: { orderNumber: string }) {
@@ -92,6 +82,7 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
   if (!order) return <section className="mx-auto max-w-2xl px-4 py-10 font-bold">Order not found.</section>;
 
   const pickupTime = order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? new Date(order.scheduled_pickup_time).toLocaleString() : "ASAP";
+  const paymentText = order.payment_method === "stripe" ? `Stripe / ${order.payment_status ?? "unpaid"}` : "Pay at pickup / cash";
 
   return (
     <section className="mx-auto max-w-2xl bg-white px-4 py-8 text-black print:max-w-none print:p-0">
@@ -112,7 +103,7 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
       </button>
       <div className="border-2 border-black p-5">
         <h1 className="text-center text-3xl font-black">China Delight</h1>
-        <p className="mt-2 text-center text-xl font-black">Order {order.order_number}</p>
+        <p className="mt-2 text-center text-5xl font-black">Order {order.order_number}</p>
         <div className="mt-5 grid gap-1 border-y-2 border-black py-3 text-lg">
           <p>
             <strong>Name:</strong> {order.customer_name}
@@ -124,7 +115,10 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
             <strong>Pickup:</strong> {pickupTime}
           </p>
           <p>
-            <strong>Payment:</strong> {order.payment_method === "stripe" ? "Stripe / online" : "Pay at pickup / cash"}
+            <strong>Estimate:</strong> {estimatedPickupWindow(order.order_items)}
+          </p>
+          <p>
+            <strong>Payment:</strong> {paymentText}
           </p>
           <p>
             <strong>Status:</strong> {order.status}
@@ -141,13 +135,23 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
               <p className="text-xl font-black">
                 {item.quantity} x #{item.item_number} {item.item_name}
               </p>
-              {customizationText(item.customization) && <p className="mt-1 text-base">{customizationText(item.customization)}</p>}
+              {customizationParts(item.customization).length > 0 && (
+                <div className="mt-1 grid gap-1 text-lg">
+                  {customizationParts(item.customization).map((part) => (
+                    <p key={part} className={part.startsWith("Lunch") || part.startsWith("Includes") || part.startsWith("Notes") ? "font-black" : ""}>
+                      {part}
+                    </p>
+                  ))}
+                  {item.customization?.notes ? <p className="font-black">Special instructions: {String(item.customization.notes)}</p> : null}
+                </div>
+              )}
             </div>
           ))}
         </div>
         <div className="mt-5 grid gap-1 text-right text-lg">
           <p>Subtotal: {formatPrice(order.subtotal)}</p>
           <p>Tax: {formatPrice(order.tax)}</p>
+          <p>Processing fee: {formatPrice(order.processing_fee ?? 0)}</p>
           <p className="text-2xl font-black">Total: {formatPrice(order.total)}</p>
         </div>
       </div>

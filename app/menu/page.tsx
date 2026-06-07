@@ -1,5 +1,7 @@
 import { MenuBrowser } from "@/components/menu/menu-browser";
 
+export const dynamic = "force-dynamic";
+
 export default function MenuPage() {
   return (
     <>

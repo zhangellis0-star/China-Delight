@@ -10,7 +10,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: `${restaurant.name} | Online Ordering`,
-  description: `${restaurant.name} Chinese Restaurant in Winsted, CT. Take out, dine in, pickup, and delivery ordering.`
+  description: `${restaurant.name} Chinese Restaurant in Winsted, CT. Take out, dine in, and pickup ordering. Delivery is available through third-party platforms.`
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { customizationText } from "@/lib/order-display";
+import { closedOrderingMessage, isLunchAvailable, isLunchItem, isRestaurantOpen, lunchAvailabilityMessage, nextOpeningLabel } from "@/lib/order-rules";
 import { getStripe } from "@/lib/stripe-server";
 import { getSupabaseAdmin, getSupabaseEnvStatus } from "@/lib/supabase-server";
-import type { CartItem, CheckoutCustomer } from "@/types";
+import type { CartItem, CartTotals, CheckoutCustomer } from "@/types";
 
 function createOrderNumber() {
   return `CD-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
@@ -20,14 +22,23 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     customer: CheckoutCustomer;
     items: CartItem[];
-    totals: { subtotal: number; tax: number; total: number };
+    totals: CartTotals;
   };
 
   if (!body.customer?.name || !body.customer?.phone || !body.items?.length) {
     return NextResponse.json({ error: "Missing customer information or cart items." }, { status: 400 });
   }
+  if (body.customer.fulfillment !== "pickup") {
+    return NextResponse.json({ error: "Online orders through this website are pickup only. Please use DoorDash, Uber Eats, or Grubhub for delivery." }, { status: 400 });
+  }
   if (body.customer.pickupTimeType === "scheduled" && !body.customer.scheduledPickupTime) {
     return NextResponse.json({ error: "Please choose a scheduled pickup time." }, { status: 400 });
+  }
+  if (!isRestaurantOpen()) {
+    return NextResponse.json({ error: `${closedOrderingMessage} ${nextOpeningLabel()}` }, { status: 400 });
+  }
+  if (body.items.some((item) => isLunchItem(item)) && !isLunchAvailable()) {
+    return NextResponse.json({ error: lunchAvailabilityMessage }, { status: 400 });
   }
 
   const orderNumber = createOrderNumber();
@@ -35,17 +46,10 @@ export async function POST(request: Request) {
   let supabaseErrorMessage: string | null = null;
   let savedOrderId: string | null = null;
   const supabaseEnv = getSupabaseEnvStatus();
-  console.log("[checkout] Supabase env detection", supabaseEnv);
 
   const supabase = getSupabaseAdmin();
 
   if (supabase) {
-    console.log("[checkout] Supabase insert attempted", {
-      orderNumber,
-      itemCount: body.items.length,
-      paymentMethod: body.customer.paymentMethod
-    });
-
     const { data: order, error } = await supabase
       .from("orders")
       .insert({
@@ -54,7 +58,7 @@ export async function POST(request: Request) {
         customer_phone: body.customer.phone,
         customer_email: body.customer.email || null,
         fulfillment_type: body.customer.fulfillment,
-        delivery_address: body.customer.address || null,
+        delivery_address: null,
         customer_notes: body.customer.notes || null,
         payment_method: body.customer.paymentMethod,
         pickup_time_type: body.customer.pickupTimeType,
@@ -63,6 +67,7 @@ export async function POST(request: Request) {
         payment_status: "unpaid",
         subtotal: body.totals.subtotal,
         tax: body.totals.tax,
+        processing_fee: body.totals.processingFee ?? 0,
         total: body.totals.total
       })
       .select("id")
@@ -72,11 +77,6 @@ export async function POST(request: Request) {
       supabaseErrorMessage = error.message;
       console.error("[checkout] Supabase orders insert failed", { orderNumber, error: toSupabaseErrorLog(error) });
     } else {
-      console.log("[checkout] Supabase orders insert succeeded", {
-        orderNumber,
-        orderId: order.id
-      });
-
       savedOrderId = order.id;
 
       const { error: itemsError } = await supabase.from("order_items").insert(
@@ -97,11 +97,6 @@ export async function POST(request: Request) {
         console.error("[checkout] Supabase order_items insert failed", { orderNumber, orderId: order.id, error: toSupabaseErrorLog(itemsError) });
       } else {
         supabaseSaved = true;
-        console.log("[checkout] Supabase order_items insert succeeded", {
-          orderNumber,
-          orderId: order.id,
-          itemCount: body.items.length
-        });
       }
     }
   } else {
@@ -121,16 +116,9 @@ export async function POST(request: Request) {
 
   const stripe = getStripe();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  console.log("[checkout] Stripe config detection", {
-    hasStripeSecret: Boolean(process.env.STRIPE_SECRET_KEY),
-    stripeSecretLength: process.env.STRIPE_SECRET_KEY?.length ?? 0,
-    stripeClientCreated: Boolean(stripe),
-    paymentMethod: body.customer.paymentMethod
-  });
   if (body.customer.paymentMethod === "stripe" && stripe) {
     const successUrl = `${siteUrl}/confirmation?order=${orderNumber}`;
     const cancelUrl = `${siteUrl}/checkout`;
-    console.log("[checkout] Stripe redirect URLs", { orderNumber, successUrl, cancelUrl });
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: body.customer.email || undefined,
@@ -147,24 +135,24 @@ export async function POST(request: Request) {
             unit_amount: Math.round(item.unitPrice * 100),
             product_data: {
               name: `${item.number}. ${item.name}`,
-              description: [
-                `Size: ${item.customization.size}`,
-                item.customization.rice ? `Rice: ${item.customization.rice}` : "",
-                `Spice: ${item.customization.spiceLevel ?? "None"}`
-              ]
-                .filter(Boolean)
-                .join(" | ")
+              description: customizationText(item.customization)
             }
           }
         })),
-        {
-          quantity: 1,
-          price_data: {
-            currency: "usd",
-            unit_amount: Math.round(body.totals.tax * 100),
-            product_data: { name: "Sales tax" }
-          }
-        }
+        // Tax and processing fee as their own line items so Stripe charges the exact final total.
+        ...[
+          { name: "Sales tax", amount: Math.round(body.totals.tax * 100) },
+          { name: "Processing fee", amount: Math.round((body.totals.processingFee ?? 0) * 100) }
+        ]
+          .filter((line) => line.amount > 0)
+          .map((line) => ({
+            quantity: 1,
+            price_data: {
+              currency: "usd",
+              unit_amount: line.amount,
+              product_data: { name: line.name }
+            }
+          }))
       ]
     });
 
@@ -182,18 +170,8 @@ export async function POST(request: Request) {
       }
     }
 
-    console.log("[checkout] Stripe session created", {
-      orderNumber,
-      hasCheckoutUrl: Boolean(session.url)
-    });
-
     return NextResponse.json({ orderNumber, checkoutUrl: session.url, supabaseSaved, supabaseError: supabaseErrorMessage });
   }
 
-  console.log("[checkout] No Stripe redirect; returning order without checkoutUrl", {
-    orderNumber,
-    paymentMethod: body.customer.paymentMethod,
-    hasCheckoutUrl: false
-  });
   return NextResponse.json({ orderNumber, supabaseSaved, supabaseError: supabaseErrorMessage });
 }

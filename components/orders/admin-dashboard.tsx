@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { Printer, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Printer, Search, Volume2, VolumeX } from "lucide-react";
+import { customizationText } from "@/lib/order-display";
+import { estimatedPickupWindow } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
 import type { CartItem, OrderStatus, PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
 
@@ -23,6 +25,7 @@ type AdminOrder = {
   status: OrderStatus;
   subtotal: number;
   tax: number;
+  processing_fee?: number | null;
   total: number;
   created_at?: string;
   order_items: Array<{
@@ -35,6 +38,15 @@ type AdminOrder = {
 };
 
 const statuses: Array<OrderStatus | "all"> = ["all", "new", "accepted", "preparing", "ready", "completed", "cancelled"];
+const quickStatuses: OrderStatus[] = ["accepted", "preparing", "ready", "completed", "cancelled"];
+const statusStyles: Record<OrderStatus, string> = {
+  new: "bg-red-100 text-china-red border-red-200",
+  accepted: "bg-blue-100 text-blue-800 border-blue-200",
+  preparing: "bg-amber-100 text-amber-900 border-amber-200",
+  ready: "bg-green-100 text-green-800 border-green-200",
+  completed: "bg-stone-100 text-stone-700 border-stone-200",
+  cancelled: "bg-zinc-200 text-zinc-800 border-zinc-300"
+};
 
 function paymentLabel(method?: PaymentMethod, status?: PaymentStatus) {
   if (method !== "stripe") return "Pay at pickup / cash";
@@ -64,7 +76,7 @@ function normalizeLocalOrder(saved: string | null): AdminOrder[] {
       scheduledPickupTime?: string;
     };
     items: CartItem[];
-    totals: { subtotal: number; tax: number; total: number };
+    totals: { subtotal: number; tax: number; processingFee?: number; total: number };
     status: OrderStatus;
   };
   return [
@@ -83,6 +95,7 @@ function normalizeLocalOrder(saved: string | null): AdminOrder[] {
       status: parsed.status,
       subtotal: parsed.totals.subtotal,
       tax: parsed.totals.tax,
+      processing_fee: parsed.totals.processingFee ?? 0,
       total: parsed.totals.total,
       order_items: parsed.items.map((item) => ({
         item_number: item.number,
@@ -95,25 +108,35 @@ function normalizeLocalOrder(saved: string | null): AdminOrder[] {
   ];
 }
 
-function customizationText(customization?: Record<string, unknown>) {
-  if (!customization) return "";
-  const parts = [
-    customization.size ? `Size: ${customization.size}` : "",
-    customization.rice ? `Rice: ${customization.rice}` : "",
-    customization.spiceLevel ? `Spice: ${customization.spiceLevel}` : "",
-    customization.sauceOnSide ? "Sauce on side" : "",
-    customization.noOnion ? "No onion" : "",
-    customization.noBroccoli ? "No broccoli" : "",
-    Array.isArray(customization.addOns) && customization.addOns.length ? `Add-ons: ${customization.addOns.join(", ")}` : ""
-  ].filter(Boolean);
-  return parts.join(" | ");
-}
-
 export function AdminDashboard() {
   const router = useRouter();
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [status, setStatus] = useState<OrderStatus | "all">("all");
   const [query, setQuery] = useState("");
+  const [muted, setMuted] = useState(true);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const previousNewOrders = useRef<Set<string>>(new Set());
+
+  function playNewOrderSound() {
+    if (muted || !audioUnlocked) return;
+    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.value = 880;
+    gain.gain.value = 0.08;
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.18);
+  }
+
+  function toggleMute() {
+    setAudioUnlocked(true);
+    setMuted((current) => !current);
+  }
 
   useEffect(() => {
     async function loadOrders() {
@@ -123,10 +146,17 @@ export function AdminDashboard() {
       const response = await fetch(`/api/orders?${params.toString()}`);
       const data = await response.json();
       const localOrders = normalizeLocalOrder(window.localStorage.getItem("china-delight-last-order"));
-      setOrders([...(data.orders ?? []), ...localOrders]);
+      const nextOrders = [...(data.orders ?? []), ...localOrders].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
+      const nextNew = new Set(nextOrders.filter((order) => order.status === "new").map((order) => order.order_number));
+      const hasFreshNew = [...nextNew].some((orderNumber) => !previousNewOrders.current.has(orderNumber));
+      if (hasFreshNew && previousNewOrders.current.size > 0) playNewOrderSound();
+      previousNewOrders.current = nextNew;
+      setOrders(nextOrders);
     }
     loadOrders();
-  }, [query, status]);
+    const timer = window.setInterval(loadOrders, 30000);
+    return () => window.clearInterval(timer);
+  }, [query, status, muted, audioUnlocked]);
 
   const visible = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -157,10 +187,14 @@ export function AdminDashboard() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="font-black uppercase tracking-[0.16em] text-china-red">Admin</p>
-          <h1 className="mt-2 text-4xl font-black">Orders dashboard</h1>
+          <h1 className="mt-2 text-3xl font-black sm:text-4xl">Orders dashboard</h1>
         </div>
         <div className="flex flex-wrap gap-3">
           <p className="rounded-md bg-white px-4 py-3 font-bold text-stone-700 shadow-sm">{visible.length} visible orders</p>
+          <button onClick={toggleMute} className="focus-ring inline-flex items-center gap-2 rounded-md border border-stone-300 bg-white px-4 py-3 font-bold text-stone-700">
+            {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+            {muted ? "Unmute" : "Mute"}
+          </button>
           <button onClick={logout} className="focus-ring rounded-md border border-stone-300 bg-white px-4 py-3 font-bold text-stone-700">
             Sign out
           </button>
@@ -180,13 +214,30 @@ export function AdminDashboard() {
           ))}
         </select>
       </div>
+      <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
+        {statuses.map((value) => (
+          <button
+            key={value}
+            onClick={() => setStatus(value)}
+            className={`focus-ring min-h-11 shrink-0 rounded-md border px-4 py-2 font-black ${
+              status === value ? "border-china-red bg-china-red text-white" : "border-stone-300 bg-white text-stone-700"
+            }`}
+          >
+            {value === "all" ? "All" : value.charAt(0).toUpperCase() + value.slice(1)}
+          </button>
+        ))}
+      </div>
 
       <div className="mt-6 grid gap-4">
         {visible.map((order) => (
-          <article key={order.order_number} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+          <article key={order.order_number} className={`rounded-lg border p-5 shadow-sm ${order.status === "new" ? "border-china-red bg-red-50/70" : "border-stone-200 bg-white"}`}>
             <div className="flex flex-col justify-between gap-4 lg:flex-row">
               <div>
-                <p className="font-black text-china-red">{order.order_number}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-black text-china-red">{order.order_number}</p>
+                  <span className={`rounded-md border px-2 py-1 text-xs font-black uppercase ${statusStyles[order.status]}`}>{order.status}</span>
+                  {order.status === "new" && <span className="rounded-md bg-china-red px-2 py-1 text-xs font-black uppercase text-white">New Order</span>}
+                </div>
                 <h2 className="mt-1 text-2xl font-black">{order.customer_name}</h2>
                 <p className="text-stone-600">
                   {order.customer_phone} {order.customer_email ? `| ${order.customer_email}` : ""} | {order.fulfillment_type}
@@ -194,6 +245,7 @@ export function AdminDashboard() {
                 <p className="mt-1 text-stone-600">
                   {paymentLabel(order.payment_method, order.payment_status)} | Pickup: {pickupLabel(order)}
                 </p>
+                <p className="mt-1 font-bold text-stone-700">Estimate: {estimatedPickupWindow(order.order_items)}</p>
                 {order.delivery_address && <p className="mt-1 text-stone-600">{order.delivery_address}</p>}
                 {order.customer_notes && <p className="mt-1 text-stone-600">Notes: {order.customer_notes}</p>}
               </div>
@@ -203,7 +255,23 @@ export function AdminDashboard() {
                     <option key={value}>{value}</option>
                   ))}
                 </select>
-                <p className="text-right text-2xl font-black">{formatPrice(order.total)}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {quickStatuses.map((nextStatus) => (
+                    <button
+                      key={nextStatus}
+                      onClick={() => updateStatus(order.order_number, nextStatus)}
+                      className={`focus-ring min-h-10 rounded-md border px-3 text-sm font-black ${statusStyles[nextStatus]}`}
+                    >
+                      {nextStatus}
+                    </button>
+                  ))}
+                </div>
+                <div className="rounded-md bg-china-paper p-3 text-right text-sm">
+                  <p>Subtotal: {formatPrice(order.subtotal)}</p>
+                  <p>Tax: {formatPrice(order.tax)}</p>
+                  <p>Processing fee: {formatPrice(order.processing_fee ?? 0)}</p>
+                  <p className="text-xl font-black">Total: {formatPrice(order.total)}</p>
+                </div>
                 <Link href={`/admin/orders/${order.order_number}/print`} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-stone-300 px-4 font-bold text-stone-800">
                   <Printer className="h-5 w-5" />
                   Ticket
@@ -218,7 +286,7 @@ export function AdminDashboard() {
                       {item.quantity} x #{item.item_number} {item.item_name}
                     </strong>
                     {customizationText(item.customization) && <span className="block text-sm text-stone-600">{customizationText(item.customization)}</span>}
-                    {item.customization?.notes ? <span className="block text-sm text-stone-600">Notes: {String(item.customization.notes)}</span> : null}
+                    {item.customization?.notes ? <span className="block text-sm font-bold text-stone-700">Notes: {String(item.customization.notes)}</span> : null}
                   </span>
                   <span className="font-bold">{formatPrice(item.unit_price * item.quantity)}</span>
                 </div>
