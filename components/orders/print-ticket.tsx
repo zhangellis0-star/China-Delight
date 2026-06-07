@@ -110,7 +110,7 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
           <p>
             <strong>Name:</strong> {order.customer_name}
           </p>
-          <p>
+          <p className="text-2xl font-black">
             <strong>Phone:</strong> {order.customer_phone}
           </p>
           <p>
@@ -119,7 +119,7 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
           <p>
             <strong>Estimate:</strong> {estimatedPickupWindow(order.order_items)}
           </p>
-          <p>
+          <p className="text-xl font-black">
             <strong>Payment:</strong> {paymentText}
           </p>
           <p>

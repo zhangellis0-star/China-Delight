@@ -31,6 +31,8 @@ TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
 ```
 
+Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Stripe keys, `STRIPE_WEBHOOK_SECRET`, tax/fee rates, and Twilio variables when real SMS is desired.
+
 ## Pricing (tax + processing fee)
 
 Checkout totals are computed in `lib/pricing.ts` (`calculateCart`) from `lib/restaurant.ts`:
@@ -50,13 +52,13 @@ It adds (among the base tables) the `orders.processing_fee` and `orders.tip_amou
 
 ## Phone Verification
 
-Customers must verify their phone number at checkout before placing an order (applies to both cash and Stripe orders). The flow:
+Phone number is required at checkout. SMS verification is optional for now and remains provider-ready for future use. The optional flow:
 
 1. Customer enters phone and clicks **Send verification code**.
 2. `POST /api/phone-verification` (`action: "send"`) generates a 6-digit code, stores it (Supabase `phone_verifications` table, or an in-memory fallback when Supabase is not configured), and sends it.
 3. Customer enters the code and clicks **Verify** (`action: "verify"`). Codes expire after 10 minutes.
 
-Messages shown: code sent, invalid code, code expired, phone verified.
+Messages shown: code sent, invalid code, code expired, phone verified. Customers can place cash or Stripe orders without completing SMS verification as long as they enter a phone number.
 
 **SMS provider:** set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER` to send real texts via Twilio (`lib/sms.ts`). If they are not set, the app runs in **development mode**: the code is logged and returned to the local browser so you can test, and is **never exposed in production** (`NODE_ENV === "production"`). Admin pages do not require verification.
 
@@ -114,9 +116,13 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 
 Production: create a webhook endpoint in the Stripe Dashboard pointing at `https://YOUR_DOMAIN/api/stripe/webhook`, subscribe to `checkout.session.completed` (and optionally `checkout.session.expired` / `checkout.session.async_payment_failed`), and copy its signing secret into `STRIPE_WEBHOOK_SECRET`.
 
+## Customer Order Status
+
+Customers can check status at `/order-status` by entering both their order number and phone number. The lookup only returns an order when both values match, so it does not expose other customers' orders.
+
 ## Add Real Menu Items
 
-Open `data/menu.ts` and edit `rawMenuItems`. The exported `menuItems` list is built from that source by applying split-item rules and safe category image placeholders. Each item supports:
+Open `data/menu.ts` and edit `rawMenuItems`. The exported `menuItems` list is built from that source by applying split-item rules. Each item supports:
 
 ```ts
 {
@@ -126,7 +132,6 @@ Open `data/menu.ts` and edit `rawMenuItems`. The exported `menuItems` list is bu
   category: "Szechuan & Hunan Dishes",
   spicy: true,
   prices: { order: 13.85 },
-  imageUrl: "/optional-real-photo.jpg",
   options: { spiceLevel: true, rice: true, addOns: true }
 }
 ```

@@ -1,7 +1,7 @@
 import type { CartItem, MenuItem } from "@/types";
 
 export const lunchAvailabilityMessage = "Lunch specials are available Monday-Saturday, 11:00 AM-3:00 PM.";
-export const closedOrderingMessage = "China Delight is currently closed. Online ordering is available during store hours.";
+export const closedOrderingMessage = "We're closed now.";
 export const comboIncludedItems = ["Pork Fried Rice", "Egg Roll"];
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -58,11 +58,11 @@ export function nextOpeningLabel(date = new Date()) {
   const parts = easternParts(date);
   const now = minutes(parts.hour, parts.minute);
   const today = storeWindow(parts.day);
-  if (now < today.open) return `Opens today at ${formatTime(today.open)}.`;
+  if (now < today.open) return `Online ordering opens today at ${formatTime(today.open)}.`;
 
   const nextDay = (parts.day + 1) % 7;
   const next = storeWindow(nextDay);
-  return `Next opening: ${dayNames[nextDay]} at ${formatTime(next.open)}.`;
+  return `Online ordering opens ${dayNames[nextDay]} at ${formatTime(next.open)}.`;
 }
 
 export function isLunchAvailable(date = new Date()) {
