@@ -19,14 +19,15 @@ export default function HomePage() {
             <p className="mt-5 max-w-xl text-xl leading-8 text-red-50">
               Fresh Chinese favorites for pickup, take out, and dine in at Ledgbrook Plaza in Winsted.
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <ButtonLink href="/order" className="bg-china-gold text-china-ink">
-                Order Online
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <ButtonLink href="/order" className="min-h-16 px-8 text-xl bg-china-gold text-china-ink shadow-warm">
+                Start Your Order
               </ButtonLink>
               <ButtonLink href="/menu" className="border border-white bg-white/10 text-white">
                 View Full Menu
               </ButtonLink>
             </div>
+            <p className="mt-3 text-lg font-black text-china-gold">Click Start Your Order to begin a pickup order now.</p>
             <div className="mt-8 grid gap-3 text-lg font-bold">
               <a href={restaurant.phoneHref} className="inline-flex items-center gap-3">
                 <Phone className="h-6 w-6 text-china-gold" />

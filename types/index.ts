@@ -76,6 +76,7 @@ export type CartTotals = {
   subtotal: number;
   tax: number;
   processingFee: number;
+  tip: number;
   total: number;
 };
 

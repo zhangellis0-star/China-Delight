@@ -64,6 +64,7 @@ create table if not exists public.orders (
   subtotal numeric(10, 2) not null,
   tax numeric(10, 2) not null,
   processing_fee numeric(10, 2) not null default 0,
+  tip_amount numeric(10, 2) not null default 0,
   total numeric(10, 2) not null,
   stripe_session_id text,
   created_at timestamptz not null default now(),
@@ -76,6 +77,7 @@ alter table public.orders add column if not exists scheduled_pickup_time timesta
 alter table public.orders add column if not exists payment_status payment_status not null default 'unpaid';
 alter table public.orders add column if not exists stripe_session_id text;
 alter table public.orders add column if not exists processing_fee numeric(10, 2) not null default 0;
+alter table public.orders add column if not exists tip_amount numeric(10, 2) not null default 0;
 alter table public.orders alter column customer_email drop not null;
 
 create table if not exists public.order_items (

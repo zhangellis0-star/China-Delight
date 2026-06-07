@@ -26,6 +26,7 @@ type AdminOrder = {
   subtotal: number;
   tax: number;
   processing_fee?: number | null;
+  tip_amount?: number | null;
   total: number;
   created_at?: string;
   order_items: Array<{
@@ -76,7 +77,7 @@ function normalizeLocalOrder(saved: string | null): AdminOrder[] {
       scheduledPickupTime?: string;
     };
     items: CartItem[];
-    totals: { subtotal: number; tax: number; processingFee?: number; total: number };
+    totals: { subtotal: number; tax: number; processingFee?: number; tip?: number; total: number };
     status: OrderStatus;
   };
   return [
@@ -96,6 +97,7 @@ function normalizeLocalOrder(saved: string | null): AdminOrder[] {
       subtotal: parsed.totals.subtotal,
       tax: parsed.totals.tax,
       processing_fee: parsed.totals.processingFee ?? 0,
+      tip_amount: parsed.totals.tip ?? 0,
       total: parsed.totals.total,
       order_items: parsed.items.map((item) => ({
         item_number: item.number,
@@ -270,6 +272,7 @@ export function AdminDashboard() {
                   <p>Subtotal: {formatPrice(order.subtotal)}</p>
                   <p>Tax: {formatPrice(order.tax)}</p>
                   <p>Processing fee: {formatPrice(order.processing_fee ?? 0)}</p>
+                  <p>Tip: {formatPrice(order.tip_amount ?? 0)}</p>
                   <p className="text-xl font-black">Total: {formatPrice(order.total)}</p>
                 </div>
                 <Link href={`/admin/orders/${order.order_number}/print`} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-stone-300 px-4 font-bold text-stone-800">

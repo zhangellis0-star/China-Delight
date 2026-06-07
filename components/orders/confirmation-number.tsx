@@ -13,7 +13,7 @@ type LastOrder = {
   orderNumber: string;
   customer: CheckoutCustomer;
   items: CartItem[];
-  totals: { subtotal: number; tax: number; processingFee?: number; total: number };
+  totals: { subtotal: number; tax: number; processingFee?: number; tip?: number; total: number };
 };
 
 type SupabaseConfirmationOrder = {
@@ -29,6 +29,7 @@ type SupabaseConfirmationOrder = {
   subtotal: number;
   tax: number;
   processing_fee?: number | null;
+  tip_amount?: number | null;
   total: number;
   order_items: Array<{
     item_number: string;
@@ -117,6 +118,7 @@ export function ConfirmationNumber() {
             <p>Subtotal: {formatPrice(supabaseOrder.subtotal)}</p>
             <p>Tax: {formatPrice(supabaseOrder.tax)}</p>
             <p>Processing fee: {formatPrice(supabaseOrder.processing_fee ?? 0)}</p>
+            <p>Tip: {formatPrice(supabaseOrder.tip_amount ?? 0)}</p>
             <p className="text-2xl font-black">Total: {formatPrice(supabaseOrder.total)}</p>
           </div>
           <div className="rounded-md bg-red-50 p-3 text-sm font-bold text-china-red">
@@ -156,6 +158,7 @@ export function ConfirmationNumber() {
             <p>Subtotal: {formatPrice(lastOrder.totals.subtotal)}</p>
             <p>Tax: {formatPrice(lastOrder.totals.tax)}</p>
             <p>Processing fee: {formatPrice(lastOrder.totals.processingFee ?? 0)}</p>
+            <p>Tip: {formatPrice(lastOrder.totals.tip ?? 0)}</p>
             <p className="text-2xl font-black">Total: {formatPrice(lastOrder.totals.total)}</p>
           </div>
           <div className="rounded-md bg-red-50 p-3 text-sm font-bold text-china-red">

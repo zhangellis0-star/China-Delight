@@ -27,14 +27,16 @@ export function customizationUpcharge(addOns: string[] = []) {
   return addOns.reduce((sum, name) => sum + (addonPrices[name as keyof typeof addonPrices] ?? 0), 0);
 }
 
-export function calculateCart(items: CartItem[]) {
+export function calculateCart(items: CartItem[], tip = 0) {
   const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const tax = subtotal * restaurant.taxRate;
   const processingFee = subtotal * restaurant.processingFeeRate;
+  const safeTip = Math.max(0, tip);
   return {
     subtotal,
     tax,
     processingFee,
-    total: subtotal + tax + processingFee
+    tip: safeTip,
+    total: subtotal + tax + processingFee + safeTip
   };
 }

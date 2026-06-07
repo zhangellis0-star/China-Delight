@@ -14,7 +14,7 @@ export const restaurant = {
   ],
   taxRate: Number(process.env.NEXT_PUBLIC_TAX_RATE ?? "0.0735"),
   processingFeeRate: Number(process.env.NEXT_PUBLIC_PROCESSING_FEE_RATE ?? "0.06"),
-  featuredDishIds: ["general-tsos-chicken", "fried-dumplings", "happy-family", "sesame-chicken"],
+  featuredDishIds: ["combo-general-tsos-chicken", "steamed-dumplings", "chicken-broccoli", "crab-rangoon"],
   // Add the real restaurant marketplace URLs here when they are ready.
   deliveryPlatforms: [
   {

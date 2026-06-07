@@ -68,6 +68,7 @@ export async function POST(request: Request) {
         subtotal: body.totals.subtotal,
         tax: body.totals.tax,
         processing_fee: body.totals.processingFee ?? 0,
+        tip_amount: body.totals.tip ?? 0,
         total: body.totals.total
       })
       .select("id")
@@ -142,7 +143,8 @@ export async function POST(request: Request) {
         // Tax and processing fee as their own line items so Stripe charges the exact final total.
         ...[
           { name: "Sales tax", amount: Math.round(body.totals.tax * 100) },
-          { name: "Processing fee", amount: Math.round((body.totals.processingFee ?? 0) * 100) }
+          { name: "Processing fee", amount: Math.round((body.totals.processingFee ?? 0) * 100) },
+          { name: "Tip", amount: Math.round((body.totals.tip ?? 0) * 100) }
         ]
           .filter((line) => line.amount > 0)
           .map((line) => ({

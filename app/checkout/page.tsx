@@ -12,11 +12,22 @@ import type { CheckoutCustomer, PaymentMethod } from "@/types";
 
 type CheckoutFormCustomer = Omit<CheckoutCustomer, "paymentMethod"> & { paymentMethod: PaymentMethod | "" };
 type VerifyMessage = { type: "info" | "error" | "success"; text: string };
+type TipChoice = "none" | "18" | "20" | "22" | "custom";
 
 export default function CheckoutPage() {
   const router = useRouter();
   const { items, clearCart } = useCart();
-  const totals = calculateCart(items);
+  const [tipChoice, setTipChoice] = useState<TipChoice>("none");
+  const [customTip, setCustomTip] = useState("");
+  const baseSubtotal = calculateCart(items).subtotal;
+  const parsedCustomTip = Number(customTip || 0);
+  const tipAmount =
+    tipChoice === "custom"
+      ? Math.max(0, Number.isFinite(parsedCustomTip) ? parsedCustomTip : 0)
+      : tipChoice === "none"
+        ? 0
+        : baseSubtotal * (Number(tipChoice) / 100);
+  const totals = calculateCart(items, tipAmount);
   const orderingOpen = isRestaurantOpen();
   const estimate = estimatedPickupWindow(items);
   const [loading, setLoading] = useState(false);
@@ -219,6 +230,46 @@ export default function CheckoutPage() {
             <p className="mt-3 text-sm font-bold text-stone-700">Estimated ASAP pickup: {estimate}</p>
           </div>
 
+          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+            <p className="font-black">Optional tip</p>
+            <p className="mt-1 text-sm leading-6 text-stone-700">No tip is selected by default. Thank you for supporting the staff.</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-5">
+              {([
+                ["none", "No tip"],
+                ["18", "18%"],
+                ["20", "20%"],
+                ["22", "22%"],
+                ["custom", "Custom"]
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setTipChoice(value)}
+                  className={`focus-ring min-h-11 rounded-md border px-3 py-2 font-black ${
+                    tipChoice === value ? "border-china-red bg-red-50 text-china-red" : "border-stone-300 bg-white text-stone-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {tipChoice === "custom" && (
+              <label className="mt-3 grid gap-1 text-sm font-bold text-stone-700">
+                Custom tip amount
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={customTip}
+                  onChange={(event) => setCustomTip(event.target.value)}
+                  className="focus-ring h-12 rounded-md border border-stone-300 bg-white px-3"
+                  placeholder="0.00"
+                />
+              </label>
+            )}
+          </div>
+
           <label className="grid gap-1 font-bold">
             Order notes
             <textarea value={customer.notes} onChange={(event) => setCustomer({ ...customer, notes: event.target.value })} className="focus-ring min-h-24 rounded-md border border-stone-300 p-3" placeholder="Pickup notes, allergy notes, special instructions..." />
@@ -274,6 +325,10 @@ export default function CheckoutPage() {
             <div className="flex justify-between">
               <span>Processing fee</span>
               <span>{formatPrice(totals.processingFee)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Tip</span>
+              <span>{formatPrice(totals.tip)}</span>
             </div>
             <div className="flex justify-between text-2xl font-black">
               <span>Total</span>

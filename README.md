@@ -37,15 +37,16 @@ Checkout totals are computed in `lib/pricing.ts` (`calculateCart`) from `lib/res
 
 - **Tax** = subtotal × `NEXT_PUBLIC_TAX_RATE` (Connecticut prepared meals = `0.0735` = 7.35%).
 - **Processing fee** = subtotal × `NEXT_PUBLIC_PROCESSING_FEE_RATE` (`0.06` = 6%).
-- **Total** = subtotal + tax + processing fee.
+- **Tip** = optional customer-selected amount at checkout (none selected by default).
+- **Total** = subtotal + tax + processing fee + tip.
 
-These rates are read from env vars (never hardcoded). Both cash and Stripe orders save subtotal, tax, processing fee, and total to Supabase, and Stripe is charged the exact final total (tax and processing fee are added as their own line items). The breakdown is shown on the cart, checkout, confirmation page, admin dashboard, and print ticket.
+These rates are read from env vars (never hardcoded). Both cash and Stripe orders save subtotal, tax, processing fee, tip, and total to Supabase, and Stripe is charged the exact final total (tax, processing fee, and tip are added as their own line items). The breakdown is shown on checkout, confirmation page, admin dashboard, and print ticket.
 
 ## Supabase Setup
 
 Run `sql/schema.sql` in the Supabase SQL editor. The file is idempotent and safe to rerun. The server API uses `SUPABASE_SERVICE_ROLE_KEY` to create orders and read/update the admin dashboard.
 
-It adds (among the base tables) the `orders.processing_fee` column and a `phone_verifications` table used for SMS phone verification. After pulling these changes, **rerun `sql/schema.sql`** (or at minimum the new statements) so the live database has them.
+It adds (among the base tables) the `orders.processing_fee` and `orders.tip_amount` columns and a `phone_verifications` table used for SMS phone verification. After pulling these changes, **rerun `sql/schema.sql`** (or at minimum the new statements) so the live database has them.
 
 ## Phone Verification
 
