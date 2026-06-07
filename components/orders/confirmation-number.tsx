@@ -26,6 +26,8 @@ type SupabaseConfirmationOrder = {
   payment_status?: PaymentStatus;
   pickup_time_type: "asap" | "scheduled";
   scheduled_pickup_time?: string | null;
+  estimated_ready_minutes?: number | null;
+  estimated_ready_at?: string | null;
   subtotal: number;
   tax: number;
   processing_fee?: number | null;
@@ -46,6 +48,12 @@ function pickupTime(customer: CheckoutCustomer) {
 
 function supabasePickupTime(order: SupabaseConfirmationOrder) {
   return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? new Date(order.scheduled_pickup_time).toLocaleString() : "ASAP";
+}
+
+function readyLabel(order: Pick<SupabaseConfirmationOrder, "estimated_ready_at" | "estimated_ready_minutes" | "order_items"> | { estimated_ready_at?: null; estimated_ready_minutes?: null; order_items: CartItem[] }) {
+  if (order.estimated_ready_at) return new Date(order.estimated_ready_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (order.estimated_ready_minutes) return `${order.estimated_ready_minutes} minutes`;
+  return estimatedPickupWindow(order.order_items);
 }
 
 export function ConfirmationNumber() {
@@ -97,8 +105,9 @@ export function ConfirmationNumber() {
             <strong>Pickup time:</strong> {supabasePickupTime(supabaseOrder)}
           </p>
           <p>
-            <strong>Estimated pickup:</strong> {estimatedPickupWindow(supabaseOrder.order_items)}
+            <strong>Estimated ready:</strong> {readyLabel(supabaseOrder)}
           </p>
+          <p className="rounded-md bg-china-paper p-3 text-sm font-bold text-stone-700">You'll receive an email when your order is ready for pickup.</p>
           <div>
             <strong>Items:</strong>
             <div className="mt-2 grid gap-2">
@@ -137,8 +146,9 @@ export function ConfirmationNumber() {
             <strong>Pickup time:</strong> {pickupTime(lastOrder.customer)}
           </p>
           <p>
-            <strong>Estimated pickup:</strong> {estimatedPickupWindow(lastOrder.items)}
+            <strong>Estimated ready:</strong> {readyLabel({ order_items: lastOrder.items })}
           </p>
+          <p className="rounded-md bg-china-paper p-3 text-sm font-bold text-stone-700">You'll receive an email when your order is ready for pickup.</p>
           <div>
             <strong>Items:</strong>
             <div className="mt-2 grid gap-2">

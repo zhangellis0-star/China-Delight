@@ -85,7 +85,7 @@ export default function OrderStatusPage() {
               <strong>Pickup:</strong> {pickupLabel}
             </p>
             <p>
-              <strong>Estimated pickup:</strong> {order.estimatedPickup}
+              <strong>Estimated ready:</strong> {order.estimatedPickup}
             </p>
             <p>
               <strong>Payment:</strong> {order.paymentMethod === "stripe" ? `Stripe / ${order.paymentStatus ?? "unpaid"}` : "Pay at pickup / cash"}

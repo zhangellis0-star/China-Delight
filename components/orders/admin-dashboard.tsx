@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Printer, Search, Volume2, VolumeX } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Printer, RefreshCw, Search, Volume2, VolumeX } from "lucide-react";
 import { customizationText } from "@/lib/order-display";
 import { estimatedPickupWindow } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
@@ -22,6 +22,12 @@ type AdminOrder = {
   payment_status?: PaymentStatus;
   pickup_time_type?: PickupTimeType;
   scheduled_pickup_time?: string | null;
+  estimated_ready_minutes?: number | null;
+  estimated_ready_at?: string | null;
+  confirmation_email_sent_at?: string | null;
+  confirmation_email_error?: string | null;
+  ready_email_sent_at?: string | null;
+  ready_email_error?: string | null;
   status: OrderStatus;
   subtotal: number;
   tax: number;
@@ -39,7 +45,8 @@ type AdminOrder = {
 };
 
 const statuses: Array<OrderStatus | "all"> = ["all", "new", "accepted", "preparing", "ready", "completed", "cancelled"];
-const quickStatuses: OrderStatus[] = ["accepted", "preparing", "ready", "completed", "cancelled"];
+const quickStatuses: OrderStatus[] = ["preparing", "ready", "completed", "cancelled"];
+const readyMinuteOptions = [10, 15, 20, 25, 30, 35, 45];
 const statusStyles: Record<OrderStatus, string> = {
   new: "bg-red-100 text-china-red border-red-200",
   accepted: "bg-blue-100 text-blue-800 border-blue-200",
@@ -51,14 +58,20 @@ const statusStyles: Record<OrderStatus, string> = {
 
 function paymentLabel(method?: PaymentMethod, status?: PaymentStatus) {
   if (method !== "stripe") return "Pay at pickup / cash";
-  if (status === "paid") return "Stripe — Paid";
-  if (status === "failed") return "Stripe — Payment failed";
-  if (status === "refunded") return "Stripe — Refunded";
-  return "Stripe — Awaiting payment";
+  if (status === "paid") return "Stripe - Paid";
+  if (status === "failed") return "Stripe - Payment failed";
+  if (status === "refunded") return "Stripe - Refunded";
+  return "Stripe - Awaiting payment";
 }
 
 function pickupLabel(order: AdminOrder) {
   return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? new Date(order.scheduled_pickup_time).toLocaleString() : "ASAP";
+}
+
+function readyLabel(order: AdminOrder) {
+  if (order.estimated_ready_at) return new Date(order.estimated_ready_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (order.estimated_ready_minutes) return `${order.estimated_ready_minutes} minutes`;
+  return estimatedPickupWindow(order.order_items);
 }
 
 function normalizeLocalOrder(saved: string | null): AdminOrder[] {
@@ -93,6 +106,12 @@ function normalizeLocalOrder(saved: string | null): AdminOrder[] {
       payment_status: "unpaid",
       pickup_time_type: parsed.customer.pickupTimeType,
       scheduled_pickup_time: parsed.customer.scheduledPickupTime,
+      estimated_ready_minutes: null,
+      estimated_ready_at: null,
+      confirmation_email_sent_at: null,
+      confirmation_email_error: null,
+      ready_email_sent_at: null,
+      ready_email_error: null,
       status: parsed.status,
       subtotal: parsed.totals.subtotal,
       tax: parsed.totals.tax,
@@ -117,7 +136,14 @@ export function AdminDashboard() {
   const [query, setQuery] = useState("");
   const [muted, setMuted] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [updatingOrders, setUpdatingOrders] = useState<Set<string>>(new Set());
+  const [readyMinutes, setReadyMinutes] = useState<Record<string, string>>({});
+  const [customReadyMinutes, setCustomReadyMinutes] = useState<Record<string, string>>({});
   const previousNewOrders = useRef<Set<string>>(new Set());
+  const updatingOrdersRef = useRef<Set<string>>(new Set());
 
   function playNewOrderSound() {
     if (muted || !audioUnlocked) return;
@@ -140,25 +166,43 @@ export function AdminDashboard() {
     setMuted((current) => !current);
   }
 
-  useEffect(() => {
-    async function loadOrders() {
+  const loadOrders = useCallback(
+    async (options: { manual?: boolean } = {}) => {
+      if (updatingOrdersRef.current.size > 0) {
+        if (options.manual) setRefreshError("Finish saving the status change before refreshing.");
+        return;
+      }
+      setRefreshing(true);
       const params = new URLSearchParams();
       if (status !== "all") params.set("status", status);
       if (query.trim()) params.set("q", query.trim());
-      const response = await fetch(`/api/orders?${params.toString()}`);
-      const data = await response.json();
-      const localOrders = normalizeLocalOrder(window.localStorage.getItem("china-delight-last-order"));
-      const nextOrders = [...(data.orders ?? []), ...localOrders].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
-      const nextNew = new Set(nextOrders.filter((order) => order.status === "new").map((order) => order.order_number));
-      const hasFreshNew = [...nextNew].some((orderNumber) => !previousNewOrders.current.has(orderNumber));
-      if (hasFreshNew && previousNewOrders.current.size > 0) playNewOrderSound();
-      previousNewOrders.current = nextNew;
-      setOrders(nextOrders);
-    }
+      try {
+        const response = await fetch(`/api/orders?${params.toString()}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Unable to refresh orders.");
+        const localOrders = normalizeLocalOrder(window.localStorage.getItem("china-delight-last-order"));
+        const nextOrders = [...(data.orders ?? []), ...localOrders].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
+        const nextNew = new Set(nextOrders.filter((order) => order.status === "new").map((order) => order.order_number));
+        const hasFreshNew = [...nextNew].some((orderNumber) => !previousNewOrders.current.has(orderNumber));
+        if (hasFreshNew && previousNewOrders.current.size > 0) playNewOrderSound();
+        previousNewOrders.current = nextNew;
+        setOrders(nextOrders);
+        setLastUpdated(new Date());
+        setRefreshError(null);
+      } catch {
+        setRefreshError("Orders could not refresh. Please try again.");
+      } finally {
+        setRefreshing(false);
+      }
+    },
+    [query, status, muted, audioUnlocked]
+  );
+
+  useEffect(() => {
     loadOrders();
-    const timer = window.setInterval(loadOrders, 30000);
+    const timer = window.setInterval(loadOrders, 15000);
     return () => window.clearInterval(timer);
-  }, [query, status, muted, audioUnlocked]);
+  }, [loadOrders]);
 
   const visible = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -169,13 +213,32 @@ export function AdminDashboard() {
     });
   }, [orders, query, status]);
 
-  async function updateStatus(orderNumber: string, nextStatus: OrderStatus) {
+  function selectedReadyMinutes(orderNumber: string) {
+    const choice = readyMinutes[orderNumber] ?? "20";
+    const value = choice === "custom" ? Number(customReadyMinutes[orderNumber]) : Number(choice);
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : 20;
+  }
+
+  async function updateStatus(orderNumber: string, nextStatus: OrderStatus, estimatedReadyMinutes?: number) {
+    updatingOrdersRef.current = new Set(updatingOrdersRef.current).add(orderNumber);
+    setUpdatingOrders(new Set(updatingOrdersRef.current));
     setOrders((current) => current.map((order) => (order.order_number === orderNumber ? { ...order, status: nextStatus } : order)));
-    await fetch("/api/orders", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderNumber, status: nextStatus })
-    }).catch(() => undefined);
+    try {
+      const response = await fetch("/api/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderNumber, status: nextStatus, estimatedReadyMinutes })
+      });
+      if (!response.ok) throw new Error("Status update failed.");
+      setRefreshError(null);
+    } catch {
+      setRefreshError("Status could not be saved. Please refresh and try again.");
+    } finally {
+      const nextUpdating = new Set(updatingOrdersRef.current);
+      nextUpdating.delete(orderNumber);
+      updatingOrdersRef.current = nextUpdating;
+      setUpdatingOrders(nextUpdating);
+    }
   }
 
   async function logout() {
@@ -193,6 +256,14 @@ export function AdminDashboard() {
         </div>
         <div className="flex flex-wrap gap-3">
           <p className="rounded-md bg-white px-4 py-3 font-bold text-stone-700 shadow-sm">{visible.length} visible orders</p>
+          <button
+            onClick={() => loadOrders({ manual: true })}
+            disabled={refreshing || updatingOrders.size > 0}
+            className="focus-ring inline-flex items-center gap-2 rounded-md border border-stone-300 bg-white px-4 py-3 font-bold text-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh now
+          </button>
           <button onClick={toggleMute} className="focus-ring inline-flex items-center gap-2 rounded-md border border-stone-300 bg-white px-4 py-3 font-bold text-stone-700">
             {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
             {muted ? "Unmute" : "Mute"}
@@ -201,6 +272,11 @@ export function AdminDashboard() {
             Sign out
           </button>
         </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-2 text-sm font-bold text-stone-600 sm:flex-row sm:flex-wrap sm:items-center">
+        <span>Auto-refreshing every 15 seconds.</span>
+        <span>{lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Loading latest orders..."}</span>
+        {refreshError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{refreshError}</span>}
       </div>
 
       <div className="mt-6 grid gap-4 rounded-lg border border-stone-200 bg-white p-4 shadow-sm lg:grid-cols-[1fr_240px]">
@@ -247,27 +323,86 @@ export function AdminDashboard() {
                 <p className="mt-1 text-stone-600">
                   {paymentLabel(order.payment_method, order.payment_status)} | Pickup: {pickupLabel(order)}
                 </p>
-                <p className="mt-1 font-bold text-stone-700">Estimate: {estimatedPickupWindow(order.order_items)}</p>
+                <p className="mt-1 font-bold text-stone-700">Ready estimate: {readyLabel(order)}</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs font-black uppercase">
+                  {order.confirmation_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Confirmation email sent</span>}
+                  {order.confirmation_email_error && <span className="rounded-md bg-amber-100 px-2 py-1 text-amber-900">Confirmation email failed</span>}
+                  {order.ready_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Ready email sent</span>}
+                  {order.ready_email_error && <span className="rounded-md bg-amber-100 px-2 py-1 text-amber-900">Ready email failed</span>}
+                </div>
                 {order.delivery_address && <p className="mt-1 text-stone-600">{order.delivery_address}</p>}
                 {order.customer_notes && <p className="mt-1 text-stone-600">Notes: {order.customer_notes}</p>}
               </div>
               <div className="grid gap-2 sm:min-w-60">
-                <select value={order.status} onChange={(event) => updateStatus(order.order_number, event.target.value as OrderStatus)} className="focus-ring h-12 rounded-md border border-stone-300 px-3 font-bold">
+                <select
+                  value={order.status}
+                  onChange={(event) => {
+                    const nextStatus = event.target.value as OrderStatus;
+                    updateStatus(order.order_number, nextStatus, nextStatus === "accepted" ? selectedReadyMinutes(order.order_number) : undefined);
+                  }}
+                  disabled={updatingOrders.has(order.order_number)}
+                  className="focus-ring h-12 rounded-md border border-stone-300 px-3 font-bold disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   {statuses.filter((value) => value !== "all").map((value) => (
                     <option key={value}>{value}</option>
                   ))}
                 </select>
+                {order.status === "new" && (
+                  <div className="grid gap-2 rounded-md border border-stone-200 bg-white p-3">
+                    <label className="grid gap-1 text-sm font-black text-stone-700">
+                      Ready in
+                      <select
+                        value={readyMinutes[order.order_number] ?? "20"}
+                        onChange={(event) => setReadyMinutes((current) => ({ ...current, [order.order_number]: event.target.value }))}
+                        className="focus-ring h-11 rounded-md border border-stone-300 px-3"
+                      >
+                        {readyMinuteOptions.map((minutes) => (
+                          <option key={minutes} value={minutes}>
+                            {minutes} minutes
+                          </option>
+                        ))}
+                        <option value="custom">Custom minutes</option>
+                      </select>
+                    </label>
+                    {(readyMinutes[order.order_number] ?? "20") === "custom" && (
+                      <input
+                        type="number"
+                        min="1"
+                        inputMode="numeric"
+                        value={customReadyMinutes[order.order_number] ?? ""}
+                        onChange={(event) => setCustomReadyMinutes((current) => ({ ...current, [order.order_number]: event.target.value }))}
+                        className="focus-ring h-11 rounded-md border border-stone-300 px-3"
+                        placeholder="Minutes"
+                      />
+                    )}
+                    <button
+                      onClick={() => updateStatus(order.order_number, "accepted", selectedReadyMinutes(order.order_number))}
+                      disabled={updatingOrders.has(order.order_number)}
+                      className="focus-ring min-h-11 rounded-md bg-china-red px-4 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400"
+                    >
+                      Accept / Confirm order
+                    </button>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   {quickStatuses.map((nextStatus) => (
                     <button
                       key={nextStatus}
                       onClick={() => updateStatus(order.order_number, nextStatus)}
-                      className={`focus-ring min-h-10 rounded-md border px-3 text-sm font-black ${statusStyles[nextStatus]}`}
+                      disabled={updatingOrders.has(order.order_number)}
+                      className={`focus-ring min-h-10 rounded-md border px-3 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60 ${statusStyles[nextStatus]}`}
                     >
                       {nextStatus}
                     </button>
                   ))}
                 </div>
+                <button
+                  onClick={() => updateStatus(order.order_number, "ready")}
+                  disabled={updatingOrders.has(order.order_number)}
+                  className="focus-ring min-h-11 rounded-md border border-green-700 bg-green-700 px-4 font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Mark Ready & Email Customer
+                </button>
                 <div className="rounded-md bg-china-paper p-3 text-right text-sm">
                   <p>Subtotal: {formatPrice(order.subtotal)}</p>
                   <p>Tax: {formatPrice(order.tax)}</p>

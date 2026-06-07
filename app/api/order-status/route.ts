@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase
     .from("orders")
-    .select("order_number, customer_phone, status, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, total, order_items(quantity)")
+    .select("order_number, customer_phone, status, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, estimated_ready_minutes, estimated_ready_at, total, order_items(quantity)")
     .eq("order_number", orderNumber)
     .single();
 
@@ -38,7 +38,11 @@ export async function POST(request: Request) {
       paymentStatus: data.payment_status,
       pickupTimeType: data.pickup_time_type,
       scheduledPickupTime: data.scheduled_pickup_time,
-      estimatedPickup: estimatedPickupWindow(data.order_items ?? []),
+      estimatedPickup: data.estimated_ready_at
+        ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(data.estimated_ready_at))
+        : data.estimated_ready_minutes
+          ? `${data.estimated_ready_minutes} minutes`
+          : estimatedPickupWindow(data.order_items ?? []),
       total: data.total
     }
   });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
+import { sendOrderConfirmationEmail } from "@/lib/email";
 import { getStripe } from "@/lib/stripe-server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import type { PaymentStatus } from "@/types";
@@ -30,6 +31,32 @@ async function setPaymentStatus(orderNumber: string, paymentStatus: PaymentStatu
     return;
   }
   console.log("[stripe-webhook] Order payment status updated", { orderNumber, paymentStatus });
+
+  if (paymentStatus === "paid") {
+    const { data: order, error: lookupError } = await supabase
+      .from("orders")
+      .select("*, order_items(item_number, item_name, quantity, unit_price, customization)")
+      .eq("order_number", orderNumber)
+      .single();
+    if (lookupError || !order) {
+      console.error("[stripe-webhook] Could not load order for confirmation email", { orderNumber, error: lookupError?.message ?? "Missing order" });
+      return;
+    }
+    if (order.confirmation_email_sent_at) return;
+
+    const emailResult = await sendOrderConfirmationEmail(order);
+    const { error: emailUpdateError } = await supabase
+      .from("orders")
+      .update({
+        confirmation_email_sent_at: emailResult.sent ? new Date().toISOString() : null,
+        confirmation_email_error: emailResult.sent ? null : emailResult.error ?? null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("order_number", orderNumber);
+    if (emailUpdateError) {
+      console.error("[stripe-webhook] Failed to save confirmation email status", { orderNumber, error: emailUpdateError.message });
+    }
+  }
 }
 
 export async function POST(request: Request) {

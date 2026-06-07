@@ -24,6 +24,8 @@ STRIPE_SECRET_KEY=
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
 STRIPE_WEBHOOK_SECRET=
 ADMIN_PASSWORD=
+RESEND_API_KEY=
+ORDER_FROM_EMAIL=
 NEXT_PUBLIC_TAX_RATE=0.0735
 NEXT_PUBLIC_PROCESSING_FEE_RATE=0.06
 TWILIO_ACCOUNT_SID=
@@ -31,7 +33,7 @@ TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
 ```
 
-Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Stripe keys, `STRIPE_WEBHOOK_SECRET`, tax/fee rates, and Twilio variables when real SMS is desired.
+Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Stripe keys, `STRIPE_WEBHOOK_SECRET`, Resend email variables, tax/fee rates, and Twilio variables when real SMS is desired.
 
 ## Pricing (tax + processing fee)
 
@@ -48,7 +50,61 @@ These rates are read from env vars (never hardcoded). Both cash and Stripe order
 
 Run `sql/schema.sql` in the Supabase SQL editor. The file is idempotent and safe to rerun. The server API uses `SUPABASE_SERVICE_ROLE_KEY` to create orders and read/update the admin dashboard.
 
-It adds (among the base tables) the `orders.processing_fee` and `orders.tip_amount` columns and a `phone_verifications` table used for SMS phone verification. After pulling these changes, **rerun `sql/schema.sql`** (or at minimum the new statements) so the live database has them.
+It adds (among the base tables) the `orders.processing_fee`, `orders.tip_amount`, estimated-ready-time columns, accepted/ready timestamps, email sent/error tracking columns, and a `phone_verifications` table used for SMS phone verification. After pulling these changes, **rerun `sql/schema.sql`** (or at minimum the new statements) so the live database has them.
+
+## Email Confirmations
+
+Email is required at checkout. The app is provider-ready for Resend and uses the server-side helper in `lib/email.ts`.
+
+Set:
+
+```bash
+RESEND_API_KEY=
+ORDER_FROM_EMAIL="China Delight <orders@yourdomain.com>"
+```
+
+If these values are missing in local development, checkout does not crash and orders still place normally. The server logs a safe warning without printing keys.
+
+### Email troubleshooting
+
+Use the safe diagnostics route:
+
+```bash
+GET /api/debug/email
+```
+
+It returns whether `RESEND_API_KEY` and `ORDER_FROM_EMAIL` are detected, the API key length only, current `NODE_ENV`, and warnings. It never returns the API key.
+
+Send a test email:
+
+```bash
+POST /api/debug/email/test
+Content-Type: application/json
+
+{
+  "to": "customer@example.com",
+  "adminPassword": "your ADMIN_PASSWORD when not in development"
+}
+```
+
+In development, the test route works without a password. Outside development, use an admin session, `adminPassword` in the JSON body, or `x-admin-password` header.
+
+If email is not received:
+
+- Check Vercel Environment Variables for `RESEND_API_KEY` and `ORDER_FROM_EMAIL`.
+- Redeploy/restart after changing environment variables.
+- Open Resend logs and search for the recipient email.
+- Check spam/junk folders.
+- Check Supabase `orders.confirmation_email_error` or `orders.ready_email_error`.
+- If `ORDER_FROM_EMAIL` uses `onboarding@resend.dev`, Resend may only send to verified/account emails depending on your account limits.
+- Use a verified sending domain for production, then set `ORDER_FROM_EMAIL` to something like `China Delight <orders@yourdomain.com>`.
+
+- Cash/pay-at-pickup orders send a confirmation email immediately after the order and items are saved to Supabase.
+- Stripe orders send the confirmation email from the Stripe webhook after `checkout.session.completed` marks payment as paid.
+- When admin marks an order ready, the app sends a ready-for-pickup email once and saves `ready_email_sent_at` so repeated clicks do not send duplicates.
+- Admin shows badges for confirmation/ready email sent or failed.
+
+Email includes order number, customer name, pickup-only wording, items, lunch choices, combo included items, special instructions, subtotal, tax, processing fee, tip, total, payment method/status, estimated ready time, restaurant phone/address, and the `/order-status` lookup page.
 
 ## Phone Verification
 
@@ -119,6 +175,10 @@ Production: create a webhook endpoint in the Stripe Dashboard pointing at `https
 ## Customer Order Status
 
 Customers can check status at `/order-status` by entering both their order number and phone number. The lookup only returns an order when both values match, so it does not expose other customers' orders.
+
+## Admin Ready Times
+
+In `/admin`, new orders show a ready-time picker before accepting. The admin can choose 10, 15, 20, 25, 30, 35, 45, or a custom number of minutes. Accepting an order saves `accepted_at`, `estimated_ready_minutes`, and `estimated_ready_at`. Marking an order ready saves `ready_at` and sends the customer a ready-for-pickup email once.
 
 ## Add Real Menu Items
 

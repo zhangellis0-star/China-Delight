@@ -16,6 +16,12 @@ type TicketOrder = {
   payment_status?: PaymentStatus;
   pickup_time_type?: PickupTimeType;
   scheduled_pickup_time?: string | null;
+  estimated_ready_minutes?: number | null;
+  estimated_ready_at?: string | null;
+  confirmation_email_sent_at?: string | null;
+  confirmation_email_error?: string | null;
+  ready_email_sent_at?: string | null;
+  ready_email_error?: string | null;
   status: OrderStatus;
   subtotal: number;
   tax: number;
@@ -52,6 +58,12 @@ function localTicket(orderNumber: string): TicketOrder | null {
     payment_status: "unpaid",
     pickup_time_type: parsed.customer.pickupTimeType,
     scheduled_pickup_time: parsed.customer.scheduledPickupTime,
+    estimated_ready_minutes: null,
+    estimated_ready_at: null,
+    confirmation_email_sent_at: null,
+    confirmation_email_error: null,
+    ready_email_sent_at: null,
+    ready_email_error: null,
     status: parsed.status,
     subtotal: parsed.totals.subtotal,
     tax: parsed.totals.tax,
@@ -85,6 +97,11 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
 
   const pickupTime = order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? new Date(order.scheduled_pickup_time).toLocaleString() : "ASAP";
   const paymentText = order.payment_method === "stripe" ? `Stripe / ${order.payment_status ?? "unpaid"}` : "Pay at pickup / cash";
+  const readyEstimate = order.estimated_ready_at
+    ? new Date(order.estimated_ready_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : order.estimated_ready_minutes
+      ? `${order.estimated_ready_minutes} minutes`
+      : estimatedPickupWindow(order.order_items);
 
   return (
     <section className="mx-auto max-w-2xl bg-white px-4 py-8 text-black print:max-w-none print:p-0">
@@ -113,17 +130,25 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
           <p className="text-2xl font-black">
             <strong>Phone:</strong> {order.customer_phone}
           </p>
+          {order.customer_email && (
+            <p>
+              <strong>Email:</strong> {order.customer_email}
+            </p>
+          )}
           <p>
             <strong>Pickup:</strong> {pickupTime}
           </p>
           <p>
-            <strong>Estimate:</strong> {estimatedPickupWindow(order.order_items)}
+            <strong>Ready estimate:</strong> {readyEstimate}
           </p>
           <p className="text-xl font-black">
             <strong>Payment:</strong> {paymentText}
           </p>
           <p>
             <strong>Status:</strong> {order.status}
+          </p>
+          <p>
+            <strong>Email:</strong> {order.ready_email_sent_at ? "Ready email sent" : order.ready_email_error ? "Ready email failed" : "Ready email not sent"}
           </p>
           {order.customer_notes && (
             <p>

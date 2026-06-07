@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sendOrderConfirmationEmail } from "@/lib/email";
 import { customizationText } from "@/lib/order-display";
 import { closedOrderingMessage, isLunchAvailable, isLunchItem, isRestaurantOpen, lunchAvailabilityMessage, nextOpeningLabel } from "@/lib/order-rules";
 import { getStripe } from "@/lib/stripe-server";
@@ -18,6 +19,10 @@ function toSupabaseErrorLog(error: { message: string; details?: string; hint?: s
   };
 }
 
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     customer: CheckoutCustomer;
@@ -25,8 +30,11 @@ export async function POST(request: Request) {
     totals: CartTotals;
   };
 
-  if (!body.customer?.name || !body.customer?.phone || !body.items?.length) {
+  if (!body.customer?.name || !body.customer?.phone || !body.customer?.email || !body.items?.length) {
     return NextResponse.json({ error: "Missing customer information or cart items." }, { status: 400 });
+  }
+  if (!isValidEmail(body.customer.email)) {
+    return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
   }
   if (body.customer.fulfillment !== "pickup") {
     return NextResponse.json({ error: "Online orders through this website are pickup only. Please use DoorDash, Uber Eats, or Grubhub for delivery." }, { status: 400 });
@@ -98,6 +106,44 @@ export async function POST(request: Request) {
         console.error("[checkout] Supabase order_items insert failed", { orderNumber, orderId: order.id, error: toSupabaseErrorLog(itemsError) });
       } else {
         supabaseSaved = true;
+        if (body.customer.paymentMethod === "pay_at_pickup") {
+          const emailResult = await sendOrderConfirmationEmail({
+            order_number: orderNumber,
+            customer_name: body.customer.name,
+            customer_email: body.customer.email,
+            customer_phone: body.customer.phone,
+            payment_method: body.customer.paymentMethod,
+            payment_status: "unpaid",
+            pickup_time_type: body.customer.pickupTimeType,
+            scheduled_pickup_time: body.customer.scheduledPickupTime || null,
+            subtotal: body.totals.subtotal,
+            tax: body.totals.tax,
+            processing_fee: body.totals.processingFee ?? 0,
+            tip_amount: body.totals.tip ?? 0,
+            total: body.totals.total,
+            order_items: body.items.map((item) => ({
+              item_number: item.number,
+              item_name: item.name,
+              quantity: item.quantity,
+              unit_price: item.unitPrice,
+              customization: item.customization
+            }))
+          });
+          const { error: emailUpdateError } = await supabase
+            .from("orders")
+            .update({
+              confirmation_email_sent_at: emailResult.sent ? new Date().toISOString() : null,
+              confirmation_email_error: emailResult.sent ? null : emailResult.error ?? null
+            })
+            .eq("id", order.id);
+          if (emailUpdateError) {
+            console.error("[checkout] Supabase confirmation email status update failed", {
+              orderNumber,
+              orderId: order.id,
+              error: toSupabaseErrorLog(emailUpdateError)
+            });
+          }
+        }
       }
     }
   } else {

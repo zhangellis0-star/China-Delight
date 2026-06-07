@@ -88,7 +88,7 @@ export type PickupTimeType = "asap" | "scheduled";
 export type CheckoutCustomer = {
   name: string;
   phone: string;
-  email?: string;
+  email: string;
   fulfillment: "pickup";
   address?: string;
   notes?: string;

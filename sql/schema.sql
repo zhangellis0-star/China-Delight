@@ -67,6 +67,14 @@ create table if not exists public.orders (
   tip_amount numeric(10, 2) not null default 0,
   total numeric(10, 2) not null,
   stripe_session_id text,
+  estimated_ready_minutes integer,
+  estimated_ready_at timestamptz,
+  accepted_at timestamptz,
+  ready_at timestamptz,
+  confirmation_email_sent_at timestamptz,
+  confirmation_email_error text,
+  ready_email_sent_at timestamptz,
+  ready_email_error text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -78,6 +86,14 @@ alter table public.orders add column if not exists payment_status payment_status
 alter table public.orders add column if not exists stripe_session_id text;
 alter table public.orders add column if not exists processing_fee numeric(10, 2) not null default 0;
 alter table public.orders add column if not exists tip_amount numeric(10, 2) not null default 0;
+alter table public.orders add column if not exists estimated_ready_minutes integer;
+alter table public.orders add column if not exists estimated_ready_at timestamptz;
+alter table public.orders add column if not exists accepted_at timestamptz;
+alter table public.orders add column if not exists ready_at timestamptz;
+alter table public.orders add column if not exists confirmation_email_sent_at timestamptz;
+alter table public.orders add column if not exists confirmation_email_error text;
+alter table public.orders add column if not exists ready_email_sent_at timestamptz;
+alter table public.orders add column if not exists ready_email_error text;
 alter table public.orders alter column customer_email drop not null;
 
 create table if not exists public.order_items (
