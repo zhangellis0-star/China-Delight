@@ -1,17 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, CreditCard } from "lucide-react";
 import { useCart } from "@/components/cart/cart-provider";
 import { customizationText } from "@/lib/order-display";
-import { closedOrderingMessage, estimatedPickupWindow, isRestaurantOpen, nextOpeningLabel } from "@/lib/order-rules";
+import {
+  ASAP_PICKUP_NOTE,
+  buildScheduledPickupISO,
+  closedOrderingMessage,
+  formatPickupDateTime,
+  getPickupDateOptions,
+  getPickupTimeSlots,
+  isLunchItem,
+  isRestaurantOpen,
+  nextOpeningLabel,
+  validateScheduledPickup
+} from "@/lib/order-rules";
 import { calculateCart, formatPrice } from "@/lib/pricing";
 import type { CheckoutCustomer, PaymentMethod } from "@/types";
 
 type CheckoutFormCustomer = Omit<CheckoutCustomer, "paymentMethod"> & { paymentMethod: PaymentMethod | "" };
 type TipChoice = "none" | "18" | "20" | "22" | "custom";
 type CheckoutFieldErrors = Partial<Record<"name" | "phone" | "email", string>>;
+type PublicSettings = {
+  orderingAllowed: boolean;
+  busyMode: "normal" | "busy" | "very_busy";
+  soldOutItemIds: string[];
+  orderingOverride?: { mode: "normal" | "open" | "paused"; expiresAt: string | null };
+  nextBoundary?: { label: string; iso: string };
+};
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -29,6 +47,13 @@ function validateCustomerFields(customer: CheckoutFormCustomer) {
 export default function CheckoutPage() {
   const router = useRouter();
   const { items, clearCart } = useCart();
+  const nameRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const paymentRef = useRef<HTMLDivElement>(null);
+  const closedMessageRef = useRef<HTMLParagraphElement>(null);
+  const reviewRef = useRef<HTMLLabelElement>(null);
+  const scheduleRef = useRef<HTMLDivElement>(null);
   const [tipChoice, setTipChoice] = useState<TipChoice>("none");
   const [customTip, setCustomTip] = useState("");
   const baseSubtotal = calculateCart(items).subtotal;
@@ -40,12 +65,17 @@ export default function CheckoutPage() {
         ? 0
         : baseSubtotal * (Number(tipChoice) / 100);
   const totals = calculateCart(items, tipAmount);
-  const orderingOpen = isRestaurantOpen();
-  const estimate = estimatedPickupWindow(items);
+  const [settings, setSettings] = useState<PublicSettings | null>(null);
+  const orderingOpen = settings?.orderingAllowed ?? isRestaurantOpen();
   const [loading, setLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<CheckoutFieldErrors>({});
   const [fieldErrorMessage, setFieldErrorMessage] = useState<string | null>(null);
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [pickupDate, setPickupDate] = useState("");
+  const [pickupTime, setPickupTime] = useState("");
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [customer, setCustomer] = useState<CheckoutFormCustomer>({
     name: "",
     phone: "",
@@ -57,6 +87,43 @@ export default function CheckoutPage() {
     scheduledPickupTime: ""
   });
 
+  const paymentLabel =
+    customer.paymentMethod === "stripe" ? "Pay online with Stripe" : customer.paymentMethod === "pay_at_pickup" ? "Pay at pickup / cash" : "Not selected";
+  const hasLunchItem = items.some((item) => isLunchItem(item));
+  const dateOptions = useMemo(() => getPickupDateOptions(new Date(), { hasLunchItem }), [hasLunchItem]);
+  const timeSlots = useMemo(() => (pickupDate ? getPickupTimeSlots(pickupDate, { hasLunchItem, now: new Date() }) : []), [pickupDate, hasLunchItem]);
+  const pickupTimeLabel =
+    customer.pickupTimeType === "scheduled"
+      ? customer.scheduledPickupTime
+        ? formatPickupDateTime(customer.scheduledPickupTime)
+        : "Not selected"
+      : ASAP_PICKUP_NOTE;
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((response) => response.json())
+      .then((data: PublicSettings) => setSettings(data))
+      .catch(() => undefined);
+  }, []);
+
+  function applySchedule(dateStr: string, timeStr: string) {
+    setPickupDate(dateStr);
+    setPickupTime(timeStr);
+    setScheduleError(null);
+    const iso = dateStr && timeStr ? buildScheduledPickupISO(dateStr, timeStr) : "";
+    setCustomer((previous) => ({ ...previous, scheduledPickupTime: iso }));
+  }
+
+  function scrollToError(target: HTMLElement | null, focusTarget?: HTMLElement | null) {
+    if (!target) return;
+    const offset = 96;
+    const top = target.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    if (focusTarget) {
+      window.setTimeout(() => focusTarget.focus({ preventScroll: true }), 250);
+    }
+  }
+
   async function submitOrder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (items.length === 0) return;
@@ -65,19 +132,38 @@ export default function CheckoutPage() {
       setFieldErrors(nextFieldErrors);
       setFieldErrorMessage("Please complete the required customer information before placing your order.");
       setPaymentError(null);
+      const firstInvalidField = nextFieldErrors.name ? nameRef.current : nextFieldErrors.phone ? phoneRef.current : emailRef.current;
+      scrollToError(firstInvalidField, firstInvalidField);
       return;
     }
     if (!orderingOpen) {
-      setPaymentError(`${closedOrderingMessage} ${nextOpeningLabel()}`);
+      setPaymentError(settings?.orderingOverride?.mode === "paused" ? `Online ordering is paused until ${settings.nextBoundary?.label ?? "the next store-hours boundary"}.` : `${closedOrderingMessage} ${nextOpeningLabel()}`);
+      scrollToError(closedMessageRef.current);
       return;
     }
+    if (customer.pickupTimeType === "scheduled") {
+      const scheduleValidationError = validateScheduledPickup(pickupDate, pickupTime, { hasLunchItem, now: new Date() });
+      if (scheduleValidationError) {
+        setScheduleError(scheduleValidationError);
+        scrollToError(scheduleRef.current);
+        return;
+      }
+    }
+    setScheduleError(null);
     if (!customer.paymentMethod) {
       setPaymentError("Please choose a payment method to continue.");
+      scrollToError(paymentRef.current);
+      return;
+    }
+    if (!reviewConfirmed) {
+      setReviewError("Please review your order and check the confirmation box before placing your order.");
+      scrollToError(reviewRef.current, reviewRef.current);
       return;
     }
     setFieldErrors({});
     setFieldErrorMessage(null);
     setPaymentError(null);
+    setReviewError(null);
     setLoading(true);
     const response = await fetch("/api/checkout", {
       method: "POST",
@@ -118,6 +204,7 @@ export default function CheckoutPage() {
                 Name {fieldErrors.name && <span className="text-sm font-black text-china-red">{fieldErrors.name}</span>}
               </span>
               <input
+                ref={nameRef}
                 required
                 aria-invalid={Boolean(fieldErrors.name)}
                 value={customer.name}
@@ -138,6 +225,7 @@ export default function CheckoutPage() {
                 Phone {fieldErrors.phone && <span className="text-sm font-black text-china-red">{fieldErrors.phone}</span>}
               </span>
               <input
+                ref={phoneRef}
                 required
                 aria-invalid={Boolean(fieldErrors.phone)}
                 value={customer.phone}
@@ -158,6 +246,7 @@ export default function CheckoutPage() {
                 Email {fieldErrors.email && <span className="text-sm font-black text-china-red">{fieldErrors.email}</span>}
               </span>
               <input
+                ref={emailRef}
                 required
                 type="email"
                 aria-invalid={Boolean(fieldErrors.email)}
@@ -177,9 +266,12 @@ export default function CheckoutPage() {
             </label>
           </div>
 
-          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+          <div ref={paymentRef} className="rounded-md border border-stone-200 bg-china-paper p-4">
             <p className="font-black">Pickup only</p>
             <p className="mt-2 leading-7 text-stone-700">Online orders through this website are pickup only.</p>
+            {settings?.busyMode && settings.busyMode !== "normal" && (
+              <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">We are currently busy. Pickup times may take longer.</p>
+            )}
           </div>
 
           <div className="rounded-md border border-stone-200 bg-china-paper p-4">
@@ -190,21 +282,75 @@ export default function CheckoutPage() {
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {(["asap", "scheduled"] as const).map((value) => (
                 <label key={value} className={`rounded-md border p-3 font-black ${customer.pickupTimeType === value ? "border-china-red bg-red-50 text-china-red" : "border-stone-300 bg-white"}`}>
-                  <input className="mr-2" type="radio" checked={customer.pickupTimeType === value} onChange={() => setCustomer({ ...customer, pickupTimeType: value })} />
+                  <input
+                    className="mr-2"
+                    type="radio"
+                    checked={customer.pickupTimeType === value}
+                    onChange={() => {
+                      if (value === "asap") {
+                        setCustomer({ ...customer, pickupTimeType: "asap", scheduledPickupTime: "" });
+                        setScheduleError(null);
+                      } else {
+                        setCustomer({ ...customer, pickupTimeType: "scheduled" });
+                      }
+                    }}
+                  />
                   {value === "asap" ? "ASAP" : "Scheduled pickup time"}
                 </label>
               ))}
             </div>
             {customer.pickupTimeType === "scheduled" && (
-              <input
-                required
-                type="datetime-local"
-                value={customer.scheduledPickupTime}
-                onChange={(event) => setCustomer({ ...customer, scheduledPickupTime: event.target.value })}
-                className="focus-ring mt-3 h-12 w-full rounded-md border border-stone-300 bg-white px-3"
-              />
+              <div ref={scheduleRef} className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1 text-sm font-bold text-stone-700">
+                  <span>Pickup date {scheduleError && !pickupDate && <span className="font-black text-china-red">Required</span>}</span>
+                  <select
+                    value={pickupDate}
+                    onChange={(event) => {
+                      const nextDate = event.target.value;
+                      const nextSlots = nextDate ? getPickupTimeSlots(nextDate, { hasLunchItem, now: new Date() }) : [];
+                      const keepTime = nextSlots.some((slot) => slot.value === pickupTime) ? pickupTime : "";
+                      applySchedule(nextDate, keepTime);
+                    }}
+                    className={`focus-ring h-12 rounded-md border bg-white px-3 ${scheduleError && !pickupDate ? "border-china-red bg-red-50" : "border-stone-300"}`}
+                  >
+                    <option value="">Select a date</option>
+                    {dateOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-sm font-bold text-stone-700">
+                  <span>Pickup time {scheduleError && pickupDate && !pickupTime && <span className="font-black text-china-red">Required</span>}</span>
+                  <select
+                    value={pickupTime}
+                    disabled={!pickupDate}
+                    onChange={(event) => applySchedule(pickupDate, event.target.value)}
+                    className={`focus-ring h-12 rounded-md border bg-white px-3 disabled:cursor-not-allowed disabled:bg-stone-100 ${scheduleError && pickupDate && !pickupTime ? "border-china-red bg-red-50" : "border-stone-300"}`}
+                  >
+                    <option value="">{!pickupDate ? "Select a date first" : timeSlots.length === 0 ? "No pickup times available for this date." : "Select a time"}</option>
+                    {timeSlots.map((slot) => (
+                      <option key={slot.value} value={slot.value}>
+                        {slot.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {pickupDate && timeSlots.length === 0 && (
+                  <p className="rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900 sm:col-span-2">No pickup times available for this date.</p>
+                )}
+                {hasLunchItem && (
+                  <p className="text-xs font-semibold text-stone-600 sm:col-span-2">Lunch specials are available Monday–Saturday, 11:00 AM–3:00 PM.</p>
+                )}
+                {scheduleError && (
+                  <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red sm:col-span-2">
+                    {scheduleError}
+                  </p>
+                )}
+              </div>
             )}
-            <p className="mt-3 text-sm font-bold text-stone-700">Estimated ASAP pickup: {estimate}</p>
+            <p className="mt-3 text-sm font-bold text-stone-700">{ASAP_PICKUP_NOTE}</p>
           </div>
 
           <div className="rounded-md border border-stone-200 bg-china-paper p-4">
@@ -273,12 +419,46 @@ export default function CheckoutPage() {
         </div>
 
         <aside className="h-fit rounded-lg border border-stone-200 bg-white p-5 shadow-warm">
-          <h2 className="text-2xl font-black">Review</h2>
+          <h2 className="text-2xl font-black">Review your order</h2>
           {!orderingOpen && (
-            <p role="alert" className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
-              {closedOrderingMessage} {nextOpeningLabel()}
+            <p ref={closedMessageRef} role="alert" className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
+              {settings?.orderingOverride?.mode === "paused" ? `Online ordering is paused until ${settings.nextBoundary?.label ?? "the next store-hours boundary"}.` : `${closedOrderingMessage} ${nextOpeningLabel()}`}
             </p>
           )}
+
+          <dl className="mt-4 grid gap-1.5 border-b border-stone-200 pb-4 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-600">Name</dt>
+              <dd className="text-right font-bold">{customer.name || "—"}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-600">Phone</dt>
+              <dd className="text-right font-bold">{customer.phone || "—"}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-600">Email</dt>
+              <dd className="break-all text-right font-bold">{customer.email || "—"}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-600">Fulfillment</dt>
+              <dd className="text-right font-bold">Pickup only</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-600">Pickup time</dt>
+              <dd className="text-right font-bold">{pickupTimeLabel}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-600">Payment</dt>
+              <dd className="text-right font-bold">{paymentLabel}</dd>
+            </div>
+            {customer.notes?.trim() && (
+              <div className="flex justify-between gap-3">
+                <dt className="text-stone-600">Special instructions</dt>
+                <dd className="text-right font-bold">{customer.notes}</dd>
+              </div>
+            )}
+          </dl>
+
           <div className="mt-4 grid gap-3">
             {items.map((item) => (
               <div key={item.cartId} className="flex justify-between gap-3 text-sm">
@@ -312,6 +492,25 @@ export default function CheckoutPage() {
               <span>{formatPrice(totals.total)}</span>
             </div>
           </div>
+
+          <label
+            ref={reviewRef}
+            className={`mt-5 flex items-start gap-3 rounded-md border p-3 text-sm font-bold ${reviewError ? "border-china-red bg-red-50" : "border-stone-300 bg-china-paper"}`}
+          >
+            <input
+              type="checkbox"
+              checked={reviewConfirmed}
+              aria-invalid={Boolean(reviewError)}
+              onChange={(event) => {
+                setReviewConfirmed(event.target.checked);
+                if (event.target.checked) setReviewError(null);
+              }}
+              className="focus-ring mt-0.5 h-5 w-5 shrink-0"
+            />
+            <span className="text-stone-800">I have reviewed my order and contact information.</span>
+          </label>
+          {reviewError && <p role="alert" className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{reviewError}</p>}
+
           <button disabled={loading || items.length === 0 || !orderingOpen} className="focus-ring mt-6 min-h-12 w-full rounded-md bg-china-red px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
             {loading ? "Placing order..." : "Place order"}
           </button>

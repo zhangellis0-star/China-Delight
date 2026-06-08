@@ -1,5 +1,5 @@
 import { customizationText } from "@/lib/order-display";
-import { estimatedPickupWindow } from "@/lib/order-rules";
+import { CONFIRMATION_PENDING_EMAIL_NOTE, estimatedPickupWindow, formatPickupDateTime } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
 import { restaurant } from "@/lib/restaurant";
 import type { PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
@@ -74,7 +74,7 @@ function siteUrl() {
 }
 
 function pickupText(order: EmailOrder) {
-  return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? new Date(order.scheduled_pickup_time).toLocaleString() : "ASAP";
+  return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
 }
 
 export function readyTimeText(order: Pick<EmailOrder, "estimated_ready_at" | "estimated_ready_minutes" | "order_items">) {
@@ -182,7 +182,7 @@ Order number: ${order.order_number}
 Customer: ${order.customer_name}
 Pickup: pickup only
 Pickup time: ${pickupText(order)}
-Estimated ready: ${readyTimeText(order)}
+${order.estimated_ready_at ? `Estimated ready: ${readyTimeText(order)}` : CONFIRMATION_PENDING_EMAIL_NOTE}
 Payment: ${paymentText(order)}
 
 Items:
@@ -205,7 +205,7 @@ Call us if you need to change your order.`;
     <p><strong>Customer:</strong> ${escapeHtml(order.customer_name)}</p>
     <p><strong>Pickup:</strong> pickup only</p>
     <p><strong>Pickup time:</strong> ${escapeHtml(pickupText(order))}</p>
-    <p><strong>Estimated ready:</strong> ${escapeHtml(readyTimeText(order))}</p>
+    ${order.estimated_ready_at ? `<p><strong>Estimated ready:</strong> ${escapeHtml(readyTimeText(order))}</p>` : `<p>${escapeHtml(CONFIRMATION_PENDING_EMAIL_NOTE)}</p>`}
     <p><strong>Payment:</strong> ${escapeHtml(paymentText(order))}</p>
     <h2>Items</h2>
     <ul>${orderRowsHtml(order)}</ul>
@@ -219,6 +219,37 @@ Call us if you need to change your order.`;
   return sendEmail({
     to: order.customer_email,
     subject: `China Delight order ${order.order_number}`,
+    html,
+    text
+  });
+}
+
+export async function sendOrderAcceptedEmail(order: EmailOrder) {
+  if (!order.customer_email) return { sent: false, skipped: true, error: "Order has no customer email." };
+  const ready = readyTimeText(order);
+  const lookupUrl = `${siteUrl()}/order-status`;
+  const text = `Your China Delight order is confirmed.
+
+Order number: ${order.order_number}
+Pickup time: ${pickupText(order)}
+Estimated ready: ${ready}
+
+Check order status: ${lookupUrl}
+Pickup at: ${restaurant.address}
+Phone: ${restaurant.phone}`;
+
+  const html = `<div style="font-family:Arial,sans-serif;color:#1c1917;line-height:1.5">
+    <h1>Your China Delight order is confirmed.</h1>
+    <p><strong>Order number:</strong> ${escapeHtml(order.order_number)}</p>
+    <p><strong>Pickup time:</strong> ${escapeHtml(pickupText(order))}</p>
+    <p><strong>Estimated ready:</strong> ${escapeHtml(ready)}</p>
+    <p><a href="${lookupUrl}">Check your order status</a></p>
+    <p><strong>${escapeHtml(restaurant.phone)}</strong><br>${escapeHtml(restaurant.address)}</p>
+  </div>`;
+
+  return sendEmail({
+    to: order.customer_email,
+    subject: `China Delight order ${order.order_number} confirmed`,
     html,
     text
   });

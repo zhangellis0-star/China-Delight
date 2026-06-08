@@ -1,14 +1,22 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
 import { menuCategories, menuItems } from "@/data/menu";
 import type { MenuCategory } from "@/types";
 
-export function MenuBrowser({ orderMode = false }: { orderMode?: boolean }) {
+export function MenuBrowser() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<MenuCategory | "All">("All");
+  const [soldOutItemIds, setSoldOutItemIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((response) => response.json())
+      .then((data: { soldOutItemIds?: string[] }) => setSoldOutItemIds(data.soldOutItemIds ?? []))
+      .catch(() => undefined);
+  }, []);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -62,7 +70,7 @@ export function MenuBrowser({ orderMode = false }: { orderMode?: boolean }) {
       <p className="mt-5 font-semibold text-stone-700">{filtered.length} items found</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((item) => (
-          <MenuItemCard key={item.id} item={item} orderMode={orderMode} />
+          <MenuItemCard key={item.id} item={item} soldOut={soldOutItemIds.includes(item.id)} />
         ))}
       </div>
     </section>

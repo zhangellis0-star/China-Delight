@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { customizationText } from "@/lib/order-display";
-import { closedOrderingMessage, isLunchAvailable, isLunchItem, isRestaurantOpen, lunchAvailabilityMessage, nextOpeningLabel } from "@/lib/order-rules";
+import { closedOrderingMessage, isLunchAvailable, isLunchItem, lunchAvailabilityMessage, nextOpeningLabel } from "@/lib/order-rules";
+import { getOperationalSettings, orderingAllowed } from "@/lib/operations";
 import { getStripe } from "@/lib/stripe-server";
 import { getSupabaseAdmin, getSupabaseEnvStatus } from "@/lib/supabase-server";
 import type { CartItem, CartTotals, CheckoutCustomer } from "@/types";
@@ -42,8 +43,13 @@ export async function POST(request: Request) {
   if (body.customer.pickupTimeType === "scheduled" && !body.customer.scheduledPickupTime) {
     return NextResponse.json({ error: "Please choose a scheduled pickup time." }, { status: 400 });
   }
-  if (!isRestaurantOpen()) {
+  const operationalSettings = await getOperationalSettings();
+  if (!orderingAllowed(operationalSettings)) {
     return NextResponse.json({ error: `${closedOrderingMessage} ${nextOpeningLabel()}` }, { status: 400 });
+  }
+  const soldOutItem = body.items.find((item) => operationalSettings.soldOutItemIds.includes(item.menuItemId));
+  if (soldOutItem) {
+    return NextResponse.json({ error: `${soldOutItem.name} is sold out today.` }, { status: 400 });
   }
   if (body.items.some((item) => isLunchItem(item)) && !isLunchAvailable()) {
     return NextResponse.json({ error: lunchAvailabilityMessage }, { status: 400 });

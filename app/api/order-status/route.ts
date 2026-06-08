@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { estimatedPickupWindow } from "@/lib/order-rules";
+import { confirmedReadyTime } from "@/lib/order-rules";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 function digitsOnly(value: string) {
@@ -38,11 +38,7 @@ export async function POST(request: Request) {
       paymentStatus: data.payment_status,
       pickupTimeType: data.pickup_time_type,
       scheduledPickupTime: data.scheduled_pickup_time,
-      estimatedPickup: data.estimated_ready_at
-        ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(data.estimated_ready_at))
-        : data.estimated_ready_minutes
-          ? `${data.estimated_ready_minutes} minutes`
-          : estimatedPickupWindow(data.order_items ?? []),
+      estimatedReady: confirmedReadyTime(data.estimated_ready_at),
       total: data.total
     }
   });

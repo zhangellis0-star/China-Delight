@@ -2,9 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { customizationParts } from "@/lib/order-display";
-import { estimatedPickupWindow } from "@/lib/order-rules";
+import { formatPickupDateTime } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
 import type { CartItem, OrderStatus, PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
+
+const alertWords = ["allergy", "allergic", "peanut", "shellfish", "gluten", " no ", "extra", "sauce"];
+
+function hasInstructionAlert(value?: string) {
+  if (!value) return false;
+  const text = ` ${value.toLowerCase()} `;
+  return alertWords.some((word) => text.includes(word));
+}
 
 type TicketOrder = {
   order_number: string;
@@ -95,13 +103,8 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
 
   if (!order) return <section className="mx-auto max-w-2xl px-4 py-10 font-bold">Order not found.</section>;
 
-  const pickupTime = order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? new Date(order.scheduled_pickup_time).toLocaleString() : "ASAP";
+  const pickupTime = order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
   const paymentText = order.payment_method === "stripe" ? `Stripe / ${order.payment_status ?? "unpaid"}` : "Pay at pickup / cash";
-  const readyEstimate = order.estimated_ready_at
-    ? new Date(order.estimated_ready_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : order.estimated_ready_minutes
-      ? `${order.estimated_ready_minutes} minutes`
-      : estimatedPickupWindow(order.order_items);
 
   return (
     <section className="mx-auto max-w-2xl bg-white px-4 py-8 text-black print:max-w-none print:p-0">
@@ -130,16 +133,8 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
           <p className="text-2xl font-black">
             <strong>Phone:</strong> {order.customer_phone}
           </p>
-          {order.customer_email && (
-            <p>
-              <strong>Email:</strong> {order.customer_email}
-            </p>
-          )}
           <p>
             <strong>Pickup:</strong> {pickupTime}
-          </p>
-          <p>
-            <strong>Ready estimate:</strong> {readyEstimate}
           </p>
           <p className="text-xl font-black">
             <strong>Payment:</strong> {paymentText}
@@ -147,18 +142,17 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
           <p>
             <strong>Status:</strong> {order.status}
           </p>
-          <p>
-            <strong>Email:</strong> {order.ready_email_sent_at ? "Ready email sent" : order.ready_email_error ? "Ready email failed" : "Ready email not sent"}
-          </p>
           {order.customer_notes && (
-            <p>
+            <p className={hasInstructionAlert(order.customer_notes) ? "border-2 border-black p-2 text-xl font-black" : ""}>
               <strong>Order notes:</strong> {order.customer_notes}
             </p>
           )}
         </div>
         <div className="mt-5 grid gap-4">
-          {order.order_items.map((item, index) => (
-            <div key={`${item.item_number}-${index}`} className="border-b border-black pb-3">
+          {order.order_items.map((item, index) => {
+            const alert = hasInstructionAlert(`${customizationParts(item.customization).join(" ")} ${String(item.customization?.notes ?? "")}`);
+            return (
+            <div key={`${item.item_number}-${index}`} className={`border-b border-black pb-3 ${alert ? "border-2 p-2" : ""}`}>
               <p className="text-xl font-black">
                 {item.quantity} x #{item.item_number} {item.item_name}
               </p>
@@ -173,7 +167,8 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
                 </div>
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
         <div className="mt-5 grid gap-1 text-right text-lg">
           <p>Subtotal: {formatPrice(order.subtotal)}</p>

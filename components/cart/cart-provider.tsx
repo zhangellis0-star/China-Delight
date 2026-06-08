@@ -17,6 +17,21 @@ type CartContextValue = {
 const CartContext = createContext<CartContextValue | undefined>(undefined);
 const storageKey = "china-delight-cart";
 
+function stableCustomizationKey(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableCustomizationKey).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableCustomizationKey(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+export function cartCustomizationKey(customization: CartCustomization) {
+  return stableCustomizationKey(customization);
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -39,20 +54,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       addItem(item, customization, quantity = 1) {
         const size = customization.size as MenuPriceKey;
         const unitPrice = getItemPrice(item, size) + customizationUpcharge(customization.addOns);
-        const cartId = `${item.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        setItems((current) => [
-          ...current,
-          {
-            cartId,
-            menuItemId: item.id,
-            number: item.number,
-            name: item.name,
-            category: item.category,
-            quantity,
-            unitPrice,
-            customization
+        const customizationKey = cartCustomizationKey(customization);
+        setItems((current) => {
+          const existing = current.find((cartItem) => cartItem.menuItemId === item.id && cartCustomizationKey(cartItem.customization) === customizationKey);
+          if (existing) {
+            return current.map((cartItem) => (cartItem.cartId === existing.cartId ? { ...cartItem, quantity: cartItem.quantity + quantity } : cartItem));
           }
-        ]);
+          const cartId = `${item.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          return [
+            ...current,
+            {
+              cartId,
+              menuItemId: item.id,
+              number: item.number,
+              name: item.name,
+              category: item.category,
+              quantity,
+              unitPrice,
+              customization
+            }
+          ];
+        });
       },
       updateQuantity(cartId, quantity) {
         setItems((current) => current.map((item) => (item.cartId === cartId ? { ...item, quantity: Math.max(1, quantity) } : item)));

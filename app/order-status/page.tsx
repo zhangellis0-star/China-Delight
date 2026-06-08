@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Search } from "lucide-react";
+import { ASAP_PICKUP_NOTE, READY_PENDING_TEXT, formatPickupDateTime } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
 import type { OrderStatus, PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
 
@@ -12,7 +13,7 @@ type LookupOrder = {
   paymentStatus?: PaymentStatus;
   pickupTimeType?: PickupTimeType;
   scheduledPickupTime?: string | null;
-  estimatedPickup: string;
+  estimatedReady?: string | null;
   total?: number;
 };
 
@@ -21,6 +22,7 @@ const statusLabels: Record<OrderStatus, string> = {
   accepted: "Accepted",
   preparing: "Preparing",
   ready: "Ready",
+  picked_up: "Picked up",
   completed: "Completed",
   cancelled: "Cancelled"
 };
@@ -52,7 +54,8 @@ export default function OrderStatusPage() {
     setOrder(data.order);
   }
 
-  const pickupLabel = order?.pickupTimeType === "scheduled" && order.scheduledPickupTime ? new Date(order.scheduledPickupTime).toLocaleString() : "ASAP";
+  const isScheduled = order?.pickupTimeType === "scheduled" && Boolean(order.scheduledPickupTime);
+  const pickupLabel = isScheduled && order?.scheduledPickupTime ? formatPickupDateTime(order.scheduledPickupTime) : "ASAP";
 
   return (
     <section className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
@@ -80,13 +83,15 @@ export default function OrderStatusPage() {
         <div className="mt-6 rounded-lg border border-stone-200 bg-white p-5 shadow-warm">
           <p className="text-sm font-black uppercase tracking-[0.16em] text-china-red">{order.orderNumber}</p>
           <p className="mt-2 text-3xl font-black">{statusLabels[order.status]}</p>
+          {order.status === "picked_up" && <p className="mt-3 rounded-md bg-green-50 px-3 py-2 font-bold text-green-800">Picked up. Thank you for ordering from China Delight.</p>}
           <div className="mt-4 grid gap-2 text-stone-700">
             <p>
               <strong>Pickup:</strong> {pickupLabel}
             </p>
             <p>
-              <strong>Estimated ready:</strong> {order.estimatedPickup}
+              <strong>Ready time:</strong> {order.estimatedReady ?? READY_PENDING_TEXT}
             </p>
+            {!isScheduled && !order.estimatedReady && <p className="text-sm font-semibold text-stone-600">{ASAP_PICKUP_NOTE}</p>}
             <p>
               <strong>Payment:</strong> {order.paymentMethod === "stripe" ? `Stripe / ${order.paymentStatus ?? "unpaid"}` : "Pay at pickup / cash"}
             </p>

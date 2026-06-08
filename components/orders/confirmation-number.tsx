@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { customizationText } from "@/lib/order-display";
-import { estimatedPickupWindow } from "@/lib/order-rules";
+import { ASAP_PICKUP_NOTE, READY_PENDING_TEXT, confirmedReadyTime, formatPickupDateTime } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
 import { restaurant } from "@/lib/restaurant";
 import { useCart } from "@/components/cart/cart-provider";
@@ -43,17 +43,16 @@ type SupabaseConfirmationOrder = {
 };
 
 function pickupTime(customer: CheckoutCustomer) {
-  return customer.pickupTimeType === "scheduled" && customer.scheduledPickupTime ? new Date(customer.scheduledPickupTime).toLocaleString() : "ASAP";
+  return customer.pickupTimeType === "scheduled" && customer.scheduledPickupTime ? formatPickupDateTime(customer.scheduledPickupTime) : ASAP_PICKUP_NOTE;
 }
 
 function supabasePickupTime(order: SupabaseConfirmationOrder) {
-  return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? new Date(order.scheduled_pickup_time).toLocaleString() : "ASAP";
+  return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? formatPickupDateTime(order.scheduled_pickup_time) : ASAP_PICKUP_NOTE;
 }
 
-function readyLabel(order: Pick<SupabaseConfirmationOrder, "estimated_ready_at" | "estimated_ready_minutes" | "order_items"> | { estimated_ready_at?: null; estimated_ready_minutes?: null; order_items: CartItem[] }) {
-  if (order.estimated_ready_at) return new Date(order.estimated_ready_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  if (order.estimated_ready_minutes) return `${order.estimated_ready_minutes} minutes`;
-  return estimatedPickupWindow(order.order_items);
+// Ready time is shown only after the restaurant accepts and sets estimated_ready_at.
+function readyLabel(order: { estimated_ready_at?: string | null }) {
+  return confirmedReadyTime(order.estimated_ready_at) ?? READY_PENDING_TEXT;
 }
 
 export function ConfirmationNumber() {
@@ -105,9 +104,11 @@ export function ConfirmationNumber() {
             <strong>Pickup time:</strong> {supabasePickupTime(supabaseOrder)}
           </p>
           <p>
-            <strong>Estimated ready:</strong> {readyLabel(supabaseOrder)}
+            <strong>Ready time:</strong> {readyLabel(supabaseOrder)}
           </p>
-          <p className="rounded-md bg-china-paper p-3 text-sm font-bold text-stone-700">You'll receive an email when your order is ready for pickup.</p>
+          <p className="rounded-md bg-china-paper p-3 text-sm font-bold text-stone-700">
+            {supabaseOrder.pickup_time_type !== "scheduled" && !confirmedReadyTime(supabaseOrder.estimated_ready_at) ? `${ASAP_PICKUP_NOTE} ` : ""}You'll receive an email when your order is ready for pickup.
+          </p>
           <div>
             <strong>Items:</strong>
             <div className="mt-2 grid gap-2">
@@ -146,9 +147,11 @@ export function ConfirmationNumber() {
             <strong>Pickup time:</strong> {pickupTime(lastOrder.customer)}
           </p>
           <p>
-            <strong>Estimated ready:</strong> {readyLabel({ order_items: lastOrder.items })}
+            <strong>Ready time:</strong> {READY_PENDING_TEXT}
           </p>
-          <p className="rounded-md bg-china-paper p-3 text-sm font-bold text-stone-700">You'll receive an email when your order is ready for pickup.</p>
+          <p className="rounded-md bg-china-paper p-3 text-sm font-bold text-stone-700">
+            {lastOrder.customer.pickupTimeType !== "scheduled" ? `${ASAP_PICKUP_NOTE} ` : ""}You'll receive an email when your order is ready for pickup.
+          </p>
           <div>
             <strong>Items:</strong>
             <div className="mt-2 grid gap-2">

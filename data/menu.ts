@@ -1,6 +1,6 @@
 import type { MenuCategory, MenuItem } from "@/types";
 
-export const menuCategories: MenuCategory[] = [
+const printedMenuCategories: MenuCategory[] = [
   "Appetizers",
   "Soup",
   "Fried Rice",
@@ -429,4 +429,6 @@ export const menuItems: MenuItem[] = applyMenuSplits(rawMenuItems).map((item) =>
     comboIncluded: item.category === "Special Combination Platters" ? true : item.options?.comboIncluded
   }
 }));
+
+export const menuCategories: MenuCategory[] = printedMenuCategories.filter((category) => menuItems.some((item) => item.category === category));
 

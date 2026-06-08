@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 do $$
 begin
   if not exists (select 1 from pg_type where typname = 'order_status') then
-    create type order_status as enum ('new', 'accepted', 'preparing', 'ready', 'completed', 'cancelled');
+    create type order_status as enum ('new', 'accepted', 'preparing', 'ready', 'picked_up', 'completed', 'cancelled');
   end if;
 end $$;
 
@@ -15,6 +15,9 @@ begin
   if exists (select 1 from pg_type where typname = 'order_status') then
     if not exists (select 1 from pg_enum where enumlabel = 'accepted' and enumtypid = 'order_status'::regtype) then
       alter type order_status add value 'accepted' after 'new';
+    end if;
+    if not exists (select 1 from pg_enum where enumlabel = 'picked_up' and enumtypid = 'order_status'::regtype) then
+      alter type order_status add value 'picked_up' after 'ready';
     end if;
   end if;
 end $$;
@@ -73,6 +76,8 @@ create table if not exists public.orders (
   ready_at timestamptz,
   confirmation_email_sent_at timestamptz,
   confirmation_email_error text,
+  accepted_email_sent_at timestamptz,
+  accepted_email_error text,
   ready_email_sent_at timestamptz,
   ready_email_error text,
   created_at timestamptz not null default now(),
@@ -92,6 +97,8 @@ alter table public.orders add column if not exists accepted_at timestamptz;
 alter table public.orders add column if not exists ready_at timestamptz;
 alter table public.orders add column if not exists confirmation_email_sent_at timestamptz;
 alter table public.orders add column if not exists confirmation_email_error text;
+alter table public.orders add column if not exists accepted_email_sent_at timestamptz;
+alter table public.orders add column if not exists accepted_email_error text;
 alter table public.orders add column if not exists ready_email_sent_at timestamptz;
 alter table public.orders add column if not exists ready_email_error text;
 alter table public.orders alter column customer_email drop not null;
@@ -115,6 +122,16 @@ create index if not exists orders_customer_phone_idx on public.orders(customer_p
 create index if not exists order_items_order_id_idx on public.order_items(order_id);
 create index if not exists order_items_item_name_idx on public.order_items using gin (to_tsvector('english', item_name));
 
+create table if not exists public.operational_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.operational_settings (key, value)
+values ('restaurant_operations', '{}'::jsonb)
+on conflict (key) do nothing;
+
 -- Temporary store for SMS phone-verification codes. Rows expire after 10 minutes (enforced in app code).
 create table if not exists public.phone_verifications (
   id uuid primary key default gen_random_uuid(),
@@ -131,6 +148,7 @@ create index if not exists phone_verifications_expires_at_idx on public.phone_ve
 
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
+alter table public.operational_settings enable row level security;
 alter table public.phone_verifications enable row level security;
 
 -- The app uses the service role key on the server for admin reads/writes.

@@ -12,7 +12,7 @@ export default function OrderPage() {
         </div>
       </section>
       <DeliveryPlatforms />
-      <MenuBrowser orderMode />
+      <MenuBrowser />
     </>
   );
 }
