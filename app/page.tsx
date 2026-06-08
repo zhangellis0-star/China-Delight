@@ -97,7 +97,7 @@ export default function HomePage() {
               <Star className="h-5 w-5 fill-current" />
               <p className="font-black">Easy pickup ordering</p>
             </div>
-            <p className="mt-3 text-lg leading-8 text-stone-700">Order online for pickup, review your total, pay securely, and receive an order number.</p>
+            <p className="mt-3 text-lg leading-8 text-stone-700">Order online for pickup, review your total, pay in store, and receive an order number.</p>
             <div className="mt-5 rounded-md border border-stone-300 bg-white p-4">
               <p className="font-black">{restaurant.address}</p>
               <p className="mt-1 text-stone-600">{restaurant.locationNote}</p>

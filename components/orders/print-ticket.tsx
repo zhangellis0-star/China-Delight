@@ -104,7 +104,7 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
   if (!order) return <section className="mx-auto max-w-2xl px-4 py-10 font-bold">Order not found.</section>;
 
   const pickupTime = order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
-  const paymentText = order.payment_method === "stripe" ? `Stripe / ${order.payment_status ?? "unpaid"}` : "Pay at pickup / cash";
+  const paymentText = order.payment_method === "stripe" ? `Stripe / ${order.payment_status ?? "unpaid"}` : "Pay in store / Pay at pickup";
 
   return (
     <section className="mx-auto max-w-2xl bg-white px-4 py-8 text-black print:max-w-none print:p-0">

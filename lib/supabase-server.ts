@@ -52,8 +52,7 @@ export function getSupabaseEnvStatus() {
 }
 
 export function getSupabaseAdmin() {
-  const { url, serviceKey, safeStatus } = getSupabaseConfig();
-  console.log("[supabase] server config detection", safeStatus);
+  const { url, serviceKey } = getSupabaseConfig();
   if (!url || !serviceKey) return null;
   return createClient(url, serviceKey, {
     auth: { persistSession: false }

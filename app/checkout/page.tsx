@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, CreditCard } from "lucide-react";
+import { Clock, WalletCards } from "lucide-react";
 import { useCart } from "@/components/cart/cart-provider";
 import { customizationText } from "@/lib/order-display";
 import {
@@ -18,9 +18,9 @@ import {
   validateScheduledPickup
 } from "@/lib/order-rules";
 import { calculateCart, formatPrice } from "@/lib/pricing";
-import type { CheckoutCustomer, PaymentMethod } from "@/types";
+import type { CheckoutCustomer } from "@/types";
 
-type CheckoutFormCustomer = Omit<CheckoutCustomer, "paymentMethod"> & { paymentMethod: PaymentMethod | "" };
+type CheckoutFormCustomer = CheckoutCustomer;
 type TipChoice = "none" | "18" | "20" | "22" | "custom";
 type CheckoutFieldErrors = Partial<Record<"name" | "phone" | "email", string>>;
 type PublicSettings = {
@@ -82,13 +82,12 @@ export default function CheckoutPage() {
     email: "",
     fulfillment: "pickup",
     notes: "",
-    paymentMethod: "",
+    paymentMethod: "pay_at_pickup",
     pickupTimeType: "asap",
     scheduledPickupTime: ""
   });
 
-  const paymentLabel =
-    customer.paymentMethod === "stripe" ? "Pay online with Stripe" : customer.paymentMethod === "pay_at_pickup" ? "Pay at pickup / cash" : "Not selected";
+  const paymentLabel = "Pay in store / Pay at pickup";
   const hasLunchItem = items.some((item) => isLunchItem(item));
   const dateOptions = useMemo(() => getPickupDateOptions(new Date(), { hasLunchItem }), [hasLunchItem]);
   const timeSlots = useMemo(() => (pickupDate ? getPickupTimeSlots(pickupDate, { hasLunchItem, now: new Date() }) : []), [pickupDate, hasLunchItem]);
@@ -150,11 +149,6 @@ export default function CheckoutPage() {
       }
     }
     setScheduleError(null);
-    if (!customer.paymentMethod) {
-      setPaymentError("Please choose a payment method to continue.");
-      scrollToError(paymentRef.current);
-      return;
-    }
     if (!reviewConfirmed) {
       setReviewError("Please review your order and check the confirmation box before placing your order.");
       scrollToError(reviewRef.current, reviewRef.current);
@@ -182,14 +176,9 @@ export default function CheckoutPage() {
         supabaseError: data.supabaseError ?? null
       });
     }
-    window.localStorage.setItem("china-delight-last-order", JSON.stringify({ orderNumber: data.orderNumber, customer, items, totals, status: "new" }));
-    if (data.checkoutUrl) {
-      // Keep the cart intact until payment completes; the confirmation page clears it.
-      window.location.href = data.checkoutUrl;
-    } else {
-      clearCart();
-      router.push(`/confirmation?order=${data.orderNumber}`);
-    }
+    window.localStorage.setItem("china-delight-last-order", JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items, totals, status: "new" }));
+    clearCart();
+    router.push(`/confirmation?order=${data.orderNumber}`);
   }
 
   return (
@@ -400,20 +389,13 @@ export default function CheckoutPage() {
 
           <div className="rounded-md border border-stone-200 bg-china-paper p-4">
             <div className="flex items-center gap-2 font-black">
-              <CreditCard className="h-5 w-5 text-china-red" />
+              <WalletCards className="h-5 w-5 text-china-red" />
               Payment
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <label className={`rounded-md border p-3 font-black ${customer.paymentMethod === "pay_at_pickup" ? "border-china-red bg-red-50 text-china-red" : "border-stone-300 bg-white"}`}>
-                <input className="mr-2" type="radio" name="paymentMethod" checked={customer.paymentMethod === "pay_at_pickup"} onChange={() => { setCustomer({ ...customer, paymentMethod: "pay_at_pickup" }); setPaymentError(null); }} />
-                Pay at pickup / cash
-              </label>
-              <label className={`rounded-md border p-3 font-black ${customer.paymentMethod === "stripe" ? "border-china-red bg-red-50 text-china-red" : "border-stone-300 bg-white"}`}>
-                <input className="mr-2" type="radio" name="paymentMethod" checked={customer.paymentMethod === "stripe"} onChange={() => { setCustomer({ ...customer, paymentMethod: "stripe" }); setPaymentError(null); }} />
-                Pay online with Stripe
-              </label>
+            <div className="mt-3 rounded-md border border-china-red bg-red-50 p-3 font-black text-china-red">
+              Pay in store / Pay at pickup
             </div>
-            <p className="mt-2 text-sm leading-6 text-stone-700">Choose a payment method to continue. Stripe Checkout opens only when online payment is selected and Stripe keys are configured.</p>
+            <p className="mt-2 text-sm leading-6 text-stone-700">Payment is collected in store at pickup.</p>
             {paymentError && <p role="alert" className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{paymentError}</p>}
           </div>
         </div>

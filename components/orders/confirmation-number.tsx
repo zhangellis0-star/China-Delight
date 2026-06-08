@@ -98,7 +98,7 @@ export function ConfirmationNumber() {
             <strong>Customer:</strong> {supabaseOrder.customer_name}
           </p>
           <p>
-            <strong>Payment:</strong> {supabaseOrder.payment_method === "stripe" ? `Stripe / ${supabaseOrder.payment_status ?? "unpaid"}` : "Pay at pickup / cash"}
+            <strong>Payment:</strong> {supabaseOrder.payment_method === "stripe" ? `Stripe / ${supabaseOrder.payment_status ?? "unpaid"}` : "Pay in store / Pay at pickup"}
           </p>
           <p>
             <strong>Pickup time:</strong> {supabasePickupTime(supabaseOrder)}
@@ -141,7 +141,7 @@ export function ConfirmationNumber() {
             <strong>Customer:</strong> {lastOrder.customer.name}
           </p>
           <p>
-            <strong>Payment:</strong> {lastOrder.customer.paymentMethod === "stripe" ? "Paid online / Stripe" : "Pay at pickup / cash"}
+            <strong>Payment:</strong> {lastOrder.customer.paymentMethod === "stripe" ? "Paid online / Stripe" : "Pay in store / Pay at pickup"}
           </p>
           <p>
             <strong>Pickup time:</strong> {pickupTime(lastOrder.customer)}

@@ -93,7 +93,7 @@ export default function OrderStatusPage() {
             </p>
             {!isScheduled && !order.estimatedReady && <p className="text-sm font-semibold text-stone-600">{ASAP_PICKUP_NOTE}</p>}
             <p>
-              <strong>Payment:</strong> {order.paymentMethod === "stripe" ? `Stripe / ${order.paymentStatus ?? "unpaid"}` : "Pay at pickup / cash"}
+              <strong>Payment:</strong> {order.paymentMethod === "stripe" ? `Stripe / ${order.paymentStatus ?? "unpaid"}` : "Pay in store / Pay at pickup"}
             </p>
             {typeof order.total === "number" && (
               <p>

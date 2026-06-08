@@ -2,15 +2,30 @@
 
 import Link from "next/link";
 import { Minus, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useCart } from "@/components/cart/cart-provider";
 import { customizationText } from "@/lib/order-display";
 import { closedOrderingMessage, isRestaurantOpen, nextOpeningLabel } from "@/lib/order-rules";
 import { calculateCart, formatPrice } from "@/lib/pricing";
 
+type PublicSettings = {
+  orderingAllowed: boolean;
+  orderingOverride?: { mode: "normal" | "open" | "paused"; expiresAt: string | null };
+  nextBoundary?: { label: string; iso: string };
+};
+
 export default function CartPage() {
   const { items, updateQuantity, updateNotes, removeItem } = useCart();
   const totals = calculateCart(items);
-  const orderingOpen = isRestaurantOpen();
+  const [settings, setSettings] = useState<PublicSettings | null>(null);
+  const orderingOpen = settings?.orderingAllowed ?? isRestaurantOpen();
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((response) => response.json())
+      .then((data: PublicSettings) => setSettings(data))
+      .catch(() => undefined);
+  }, []);
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -39,7 +54,7 @@ export default function CartPage() {
                 </div>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="inline-flex w-fit items-center rounded-md border border-stone-300">
-                    <button onClick={() => updateQuantity(item.cartId, item.quantity - 1)} className="focus-ring p-3" aria-label="Decrease quantity">
+                    <button onClick={() => (item.quantity <= 1 ? removeItem(item.cartId) : updateQuantity(item.cartId, item.quantity - 1))} className="focus-ring p-3" aria-label="Decrease quantity">
                       <Minus className="h-5 w-5" />
                     </button>
                     <span className="min-w-12 text-center text-lg font-black">{item.quantity}</span>
@@ -82,7 +97,7 @@ export default function CartPage() {
             </div>
             {!orderingOpen && (
               <p className="mt-5 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
-                {closedOrderingMessage} {nextOpeningLabel()}
+                {settings?.orderingOverride?.mode === "paused" ? `Online ordering is paused until ${settings.nextBoundary?.label ?? "the next store-hours boundary"}.` : `${closedOrderingMessage} ${nextOpeningLabel()}`}
               </p>
             )}
             {orderingOpen ? (

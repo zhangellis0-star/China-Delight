@@ -95,7 +95,7 @@ function paymentText(order: EmailOrder) {
     if (order.payment_status === "failed") return "Stripe - payment failed";
     return "Stripe - payment processing";
   }
-  return "Pay at pickup / cash";
+  return "Pay in store / Pay at pickup";
 }
 
 function orderRows(order: EmailOrder) {
