@@ -1,7 +1,7 @@
 import type { CartItem, MenuItem } from "@/types";
 
 export const lunchAvailabilityMessage = "Lunch specials are available Monday-Saturday, 11:00 AM-3:00 PM.";
-export const closedOrderingMessage = "We're closed now.";
+export const closedOrderingMessage = "Online ordering is currently closed. The restaurant may still be open for in-person or phone orders.";
 export const comboIncludedItems = ["Pork Fried Rice", "Egg Roll"];
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
