@@ -12,19 +12,23 @@ export function MobileCartBar() {
   if (count === 0) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-red/20 bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-10px_30px_rgba(44,24,16,0.18)] backdrop-blur lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-gold/50 bg-[#fff7e8]/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-12px_34px_rgba(44,24,16,0.24)] backdrop-blur lg:hidden">
       <Link
         href="/cart"
-        className="focus-ring mx-auto flex min-h-14 max-w-lg items-center justify-center gap-2 rounded-md bg-china-red px-4 py-3 text-center font-black text-white shadow-warm"
+        className="focus-ring mx-auto flex min-h-16 max-w-lg items-center justify-between gap-3 rounded-lg bg-china-red px-4 py-3 text-left font-black text-white shadow-warm"
       >
-        <ShoppingCart className="h-5 w-5 shrink-0" />
-        <span className="truncate">View Cart</span>
-        <span aria-hidden="true">•</span>
-        <span className="shrink-0">
-          {count} {count === 1 ? "item" : "items"}
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-china-gold text-china-ink">
+            <ShoppingCart className="h-5 w-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-base leading-tight">View Cart</span>
+            <span className="block truncate text-xs font-bold text-red-50">
+              {count} {count === 1 ? "item" : "items"} ready for checkout
+            </span>
+          </span>
         </span>
-        <span aria-hidden="true">•</span>
-        <span className="shrink-0">{formatPrice(totals.total)}</span>
+        <span className="shrink-0 rounded-md bg-white/15 px-2 py-1 text-base">{formatPrice(totals.total)}</span>
       </Link>
     </div>
   );

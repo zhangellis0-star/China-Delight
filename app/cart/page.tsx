@@ -38,7 +38,7 @@ export default function CartPage() {
   }, []);
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <section className={`mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8 ${items.length > 0 ? "pb-32 lg:pb-10" : ""}`}>
       <h1 className="text-3xl font-black sm:text-4xl">Your cart</h1>
       {items.length === 0 ? (
         <div className="mt-8 rounded-lg border border-stone-200 bg-white p-8 text-center">
@@ -53,10 +53,10 @@ export default function CartPage() {
             {items.map((item) => (
               <article key={item.cartId} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row">
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-black text-china-red">#{item.number}</p>
-                    <h2 className="text-xl font-black">{item.name}</h2>
-                    <p className="mt-1 text-sm text-stone-600">
+                    <h2 className="break-words text-xl font-black">{item.name}</h2>
+                    <p className="mt-1 break-words text-sm text-stone-600">
                       {customizationText(item.customization)}
                     </p>
                   </div>
@@ -120,6 +120,17 @@ export default function CartPage() {
               </span>
             )}
           </aside>
+          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-gold/50 bg-[#fff7e8]/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-12px_34px_rgba(44,24,16,0.24)] backdrop-blur lg:hidden">
+            {orderingOpen ? (
+              <Link href="/checkout" className="focus-ring mx-auto flex min-h-16 max-w-lg items-center justify-center rounded-lg bg-china-red px-4 py-3 text-center text-lg font-black text-white shadow-warm">
+                Checkout - {formatPrice(totals.total)}
+              </Link>
+            ) : (
+              <div className="mx-auto flex min-h-16 max-w-lg items-center justify-center rounded-lg bg-stone-400 px-4 py-3 text-center text-sm font-black text-white">
+                Checkout unavailable
+              </div>
+            )}
+          </div>
         </div>
       )}
     </section>

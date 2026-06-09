@@ -239,9 +239,9 @@ export default function CheckoutPage() {
   }
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <section className={`mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8 ${items.length > 0 ? "pb-32 lg:pb-10" : ""}`}>
       <h1 className="text-3xl font-black sm:text-4xl">Checkout</h1>
-      <form noValidate onSubmit={submitOrder} className="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
+      <form id="checkout-form" noValidate onSubmit={submitOrder} className="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="grid gap-5 rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
           {fieldErrorMessage && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{fieldErrorMessage}</p>}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -603,6 +603,18 @@ export default function CheckoutPage() {
           </button>
         </aside>
       </form>
+      {items.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-gold/50 bg-[#fff7e8]/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-12px_34px_rgba(44,24,16,0.24)] backdrop-blur lg:hidden">
+          <button
+            type="submit"
+            form="checkout-form"
+            disabled={loading || !orderingOpen}
+            className="focus-ring mx-auto flex min-h-16 w-full max-w-lg items-center justify-center rounded-lg bg-china-red px-4 py-3 text-center text-lg font-black text-white shadow-warm disabled:cursor-not-allowed disabled:bg-stone-400"
+          >
+            {loading ? "Placing order..." : `Place Order - ${formatPrice(totals.total)}`}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
