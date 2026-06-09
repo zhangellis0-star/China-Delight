@@ -1,4 +1,4 @@
-import { isRestaurantOpen, isStoreOpen } from "@/lib/order-rules";
+import { isRestaurantOpen } from "@/lib/order-rules";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export type OrderingOverrideMode = "normal" | "open" | "paused";
@@ -89,6 +89,12 @@ export function easternDateKey(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
+function formatBoundaryLabel(date: Date, reference = new Date()) {
+  const parts = easternParts(date);
+  const label = `${dayNames[parts.day]} at ${formatBoundaryTime(minutes(parts.hour, parts.minute))}`;
+  return easternDateKey(date) === easternDateKey(reference) ? `today at ${formatBoundaryTime(minutes(parts.hour, parts.minute))}` : label;
+}
+
 export function nextStoreBoundary(date = new Date()) {
   const parts = easternParts(date);
   const nowMinutes = minutes(parts.hour, parts.minute);
@@ -106,6 +112,24 @@ export function nextStoreBoundary(date = new Date()) {
   const next = addDays(parts.year, parts.month, parts.dayOfMonth, 1);
   const nextWindow = onlineOrderingWindow(next.day);
   return { label: `${dayNames[next.day]} at ${formatBoundaryTime(nextWindow.open)}`, iso: easternWallTimeToISO(next.year, next.month, next.dayOfMonth, nextWindow.open) };
+}
+
+export function orderingOverrideExpiresAt(mode: OrderingOverrideMode, date = new Date()) {
+  if (mode === "normal") return null;
+  if (mode === "open" && !isRestaurantOpen(date)) {
+    return new Date(date.getTime() + 15 * 60 * 1000).toISOString();
+  }
+  return nextStoreBoundary(date).iso;
+}
+
+export function operationalBoundary(settings: OperationalSettings, date = new Date()) {
+  if (settings.orderingOverride.mode !== "normal" && settings.orderingOverride.expiresAt) {
+    const expiresAt = new Date(settings.orderingOverride.expiresAt);
+    if (!Number.isNaN(expiresAt.getTime())) {
+      return { label: formatBoundaryLabel(expiresAt, date), iso: expiresAt.toISOString() };
+    }
+  }
+  return nextStoreBoundary(date);
 }
 
 function formatBoundaryTime(totalMinutes: number) {
@@ -164,11 +188,29 @@ export async function saveOperationalSettings(settings: OperationalSettings) {
   const { error } = await supabase
     .from("operational_settings")
     .upsert({ key: settingsKey, value: settings, updated_at: new Date().toISOString() }, { onConflict: "key" });
-  return { error: error?.message ?? null };
+  if (error) {
+    console.error("[operations] Failed to save settings", { message: error.message, code: error.code });
+    return { error: error.message };
+  }
+  const { data, error: readBackError } = await supabase.from("operational_settings").select("value").eq("key", settingsKey).single();
+  if (readBackError) {
+    console.error("[operations] Failed to read back saved settings", { message: readBackError.message, code: readBackError.code });
+    return { error: readBackError.message };
+  }
+  const savedSettings = normalizeOperationalSettings(data?.value as Partial<OperationalSettings> | null | undefined);
+  if (savedSettings.orderingOverride.mode !== settings.orderingOverride.mode) {
+    const message = "Operational settings save verification failed.";
+    console.error("[operations] Settings save verification mismatch", {
+      requestedMode: settings.orderingOverride.mode,
+      savedMode: savedSettings.orderingOverride.mode
+    });
+    return { error: message };
+  }
+  return { error: null, settings: savedSettings };
 }
 
 export function orderingAllowed(settings: OperationalSettings, date = new Date()) {
-  if (settings.orderingOverride.mode === "open") return isStoreOpen(date);
+  if (settings.orderingOverride.mode === "open") return true;
   if (settings.orderingOverride.mode === "paused") return false;
   return isRestaurantOpen(date);
 }

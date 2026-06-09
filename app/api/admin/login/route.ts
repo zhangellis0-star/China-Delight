@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getAdminCookieName, isAdminConfigured, signAdminSession } from "@/lib/admin-auth";
 
@@ -13,7 +12,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
   }
 
-  cookies().set(getAdminCookieName(), signAdminSession(), {
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set(getAdminCookieName(), signAdminSession(), {
     httpOnly: true,
     sameSite: "lax",
     secure: (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https://"),
@@ -21,5 +21,5 @@ export async function POST(request: Request) {
     maxAge: 60 * 60 * 12
   });
 
-  return NextResponse.json({ ok: true });
+  return response;
 }

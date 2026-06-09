@@ -382,8 +382,8 @@ export function AdminDashboard() {
       if (!response.ok) throw new Error(data.error || "Unable to save settings.");
       setOperations(data);
       setOperationsError(null);
-    } catch {
-      setOperationsError("Admin settings could not save.");
+    } catch (error) {
+      setOperationsError(error instanceof Error ? error.message : "Admin settings could not save.");
     }
   }
 
@@ -908,13 +908,28 @@ export function AdminDashboard() {
           {operations?.settings.orderingOverride.mode !== "normal" && operations?.nextBoundary ? ` until ${operations.nextBoundary.label}` : ""}
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <button onClick={() => updateOperations({ orderingOverrideMode: "open" })} className="focus-ring min-h-10 rounded-md border border-china-green bg-china-green px-3 text-sm font-black text-white">
+          <button
+            onClick={() => updateOperations({ orderingOverrideMode: "open" })}
+            className={`focus-ring min-h-10 rounded-md border px-3 text-sm font-black ${
+              operations?.settings.orderingOverride.mode === "open" ? "border-china-green bg-china-green text-white" : "border-china-green/60 bg-white text-china-green"
+            }`}
+          >
             Taking orders
           </button>
-          <button onClick={() => updateOperations({ orderingOverrideMode: "paused" })} className="focus-ring min-h-10 rounded-md border border-china-red bg-china-red px-3 text-sm font-black text-white">
+          <button
+            onClick={() => updateOperations({ orderingOverrideMode: "paused" })}
+            className={`focus-ring min-h-10 rounded-md border px-3 text-sm font-black ${
+              operations?.settings.orderingOverride.mode === "paused" ? "border-china-red bg-china-red text-white" : "border-china-red/60 bg-white text-china-red"
+            }`}
+          >
             Pause orders
           </button>
-          <button onClick={() => updateOperations({ orderingOverrideMode: "normal" })} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+          <button
+            onClick={() => updateOperations({ orderingOverrideMode: "normal" })}
+            className={`focus-ring min-h-10 rounded-md border px-3 text-sm font-black ${
+              !operations || operations.settings.orderingOverride.mode === "normal" ? "border-china-gold bg-china-gold text-stone-950" : "border-china-gold/70 bg-white text-stone-800"
+            }`}
+          >
             Follow hours
           </button>
         </div>
