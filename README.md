@@ -26,6 +26,8 @@ STRIPE_WEBHOOK_SECRET=
 ADMIN_PASSWORD=
 RESEND_API_KEY=
 ORDER_FROM_EMAIL=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 NEXT_PUBLIC_TAX_RATE=0.0735
 NEXT_PUBLIC_PROCESSING_FEE_RATE=0.06
 TWILIO_ACCOUNT_SID=
@@ -33,7 +35,7 @@ TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
 ```
 
-Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Stripe keys, `STRIPE_WEBHOOK_SECRET`, Resend email variables, tax/fee rates, and Twilio variables when real SMS is desired.
+Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Stripe keys, `STRIPE_WEBHOOK_SECRET`, Resend email variables, Telegram variables if you want phone notifications, tax/fee rates, and Twilio variables when real SMS is desired.
 
 ## Pricing (tax + processing fee)
 
@@ -123,6 +125,17 @@ If email is not received:
 - Admin shows badges for confirmation/ready email sent or failed.
 
 Email includes order number, customer name, pickup-only wording, items, lunch choices, combo included items, special instructions, subtotal, tax, processing fee, tip, total, payment method/status, estimated ready time, restaurant phone/address, and the `/order-status` lookup page.
+
+## Telegram Admin Notifications
+
+New-order Telegram alerts are optional and server-side only. Set:
+
+```bash
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+```
+
+Create the bot with BotFather, send the bot a message from the Telegram account/group that should receive alerts, then use that chat ID. The checkout route sends Telegram only after the Supabase order and order items are saved. If Telegram is not configured or fails, checkout still succeeds and the failure is logged without exposing the bot token.
 
 ## Phone Verification
 

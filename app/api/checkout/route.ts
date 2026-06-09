@@ -5,6 +5,7 @@ import { getOperationalSettings, orderingAllowed } from "@/lib/operations";
 import { calculateCart } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode, validatePromo } from "@/lib/promo";
 import { getSupabaseAdmin, getSupabaseEnvStatus } from "@/lib/supabase-server";
+import { sendNewOrderTelegramNotification } from "@/lib/telegram";
 import type { CartItem, CartTotals, CheckoutCustomer } from "@/types";
 
 function createOrderNumber() {
@@ -141,6 +142,7 @@ export async function POST(request: Request) {
         console.error("[checkout] Supabase order_items insert failed", { orderNumber, orderId: order.id, error: toSupabaseErrorLog(itemsError) });
       } else {
         supabaseSaved = true;
+        const savedTotals = { ...finalTotals, promoCode };
         // Count the promo use only once the order and its items are safely saved.
         if (promoRecord) {
           const { error: usageError } = await supabase
@@ -150,6 +152,18 @@ export async function POST(request: Request) {
           if (usageError) {
             console.error("[checkout] Promo used_count increment failed", { orderNumber, code: promoCode, error: toSupabaseErrorLog(usageError) });
           }
+        }
+        const telegramResult = await sendNewOrderTelegramNotification({
+          orderNumber,
+          customer: body.customer,
+          items: body.items,
+          totals: savedTotals
+        });
+        if (!telegramResult.sent && !telegramResult.skipped) {
+          console.warn("[checkout] Telegram new-order notification failed", {
+            orderNumber,
+            error: telegramResult.error
+          });
         }
         const emailResult = await sendOrderConfirmationEmail({
           order_number: orderNumber,
