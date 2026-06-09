@@ -69,6 +69,11 @@ type AdminOperations = {
   nextBoundary: { label: string; iso: string };
 };
 type AdminSection = "orders" | "past-orders" | "summary" | "sold-out" | "ordering" | "busy" | "reports" | "promo" | "settings";
+type KitchenPrintState = {
+  status: "printed" | "failed";
+  message?: string;
+  updatedAt: string;
+};
 type EditOrderState = {
   orderNumber: string;
   customerName: string;
@@ -125,6 +130,8 @@ const activeStatuses: OrderStatus[] = ["new", "accepted", "preparing", "ready"];
 const pastStatuses: OrderStatus[] = ["picked_up", "completed", "cancelled"];
 const quickStatuses: OrderStatus[] = ["preparing", "ready", "picked_up", "cancelled"];
 const acceptReadyMinuteOptions = [5, 15, 25];
+const kitchenPrintStorageKey = "china-delight-kitchen-print-statuses";
+const seenNewOrdersStorageKey = "china-delight-seen-new-orders";
 const spiceLevels = ["None", "Mild", "Medium", "Hot", "Extra Hot"] as const;
 const sizeLabels: Record<MenuPriceKey, string> = { pint: "Pint", quart: "Quart", combo: "Combo", order: "Order", large: "Large", small: "Small" };
 const lunchRiceChoices: LunchRiceChoice[] = ["Pork Fried Rice", "White Rice"];
@@ -183,6 +190,38 @@ function statusLabel(status: OrderStatus | AdminFilter) {
   if (status === "picked_up") return "Picked Up";
   if (status === "past") return "Past Orders";
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function emailErrorLabel(label: string, error?: string | null) {
+  if (!error) return null;
+  return `${label} failed: ${error}`;
+}
+
+function loadKitchenPrintStatus() {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(kitchenPrintStorageKey) ?? "{}") as Record<string, KitchenPrintState>;
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([, state]) => state?.status === "printed" || state?.status === "failed")
+    ) as Record<string, KitchenPrintState>;
+  } catch {
+    return {};
+  }
+}
+
+function shouldAutoPrintOrder(order: AdminOrder) {
+  if (!order.id || order.status !== "new") return false;
+  return order.payment_method !== "stripe" || order.payment_status === "paid";
+}
+
+function loadSeenNewOrders() {
+  if (typeof window === "undefined") return new Set<string>();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(seenNewOrdersStorageKey) ?? "[]") as string[];
+    return new Set(parsed.filter((value) => typeof value === "string"));
+  } catch {
+    return new Set<string>();
+  }
 }
 
 function matchesFilter(order: AdminOrder, filter: AdminFilter) {
@@ -304,12 +343,18 @@ export function AdminDashboard() {
   const [editingOrder, setEditingOrder] = useState<EditOrderState | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [networkPrintingOrders, setNetworkPrintingOrders] = useState<Set<string>>(new Set());
+  const [kitchenPrintStatus, setKitchenPrintStatus] = useState<Record<string, KitchenPrintState>>({});
+  const [printStatusLoaded, setPrintStatusLoaded] = useState(false);
   const [addItemSearch, setAddItemSearch] = useState("");
   const [newItemDraft, setNewItemDraft] = useState<NewItemDraft | null>(null);
   const previousNewOrders = useRef<Set<string>>(new Set());
   const ordersRef = useRef<AdminOrder[]>([]);
   const updatingOrdersRef = useRef<Set<string>>(new Set());
   const editingOrderRef = useRef(false);
+  const kitchenPrintStatusRef = useRef<Record<string, KitchenPrintState>>({});
+  const autoPrintAttemptedRef = useRef<Set<string>>(new Set());
+  const seenNewOrdersRef = useRef<Set<string>>(new Set());
   const newOrderAlertIntervalRef = useRef<number | null>(null);
   const activeAudioContextsRef = useRef<Set<AudioContext>>(new Set());
   const soundTimeoutsRef = useRef<Set<number>>(new Set());
@@ -317,6 +362,14 @@ export function AdminDashboard() {
   useEffect(() => {
     editingOrderRef.current = Boolean(editingOrder);
   }, [editingOrder]);
+
+  useEffect(() => {
+    const saved = loadKitchenPrintStatus();
+    kitchenPrintStatusRef.current = saved;
+    setKitchenPrintStatus(saved);
+    setPrintStatusLoaded(true);
+    seenNewOrdersRef.current = loadSeenNewOrders();
+  }, []);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("china-delight-admin-sound");
@@ -329,6 +382,13 @@ export function AdminDashboard() {
       setMuted(false);
       setAudioUnlocked(true);
     }
+  }, []);
+
+  const saveKitchenPrintState = useCallback((orderNumber: string, state: KitchenPrintState) => {
+    const next = { ...kitchenPrintStatusRef.current, [orderNumber]: state };
+    kitchenPrintStatusRef.current = next;
+    setKitchenPrintStatus(next);
+    window.localStorage.setItem(kitchenPrintStorageKey, JSON.stringify(next));
   }, []);
 
   useEffect(() => {
@@ -489,19 +549,22 @@ export function AdminDashboard() {
     });
   }, [orders, query, filter]);
 
-  const hasUnhandledNewOrders = useMemo(() => orders.some((order) => order.status === "new"), [orders]);
-
   useEffect(() => {
-    if (!hasUnhandledNewOrders || muted || audioBlocked) {
+    const newOrderNumbers = orders.filter((order) => order.status === "new").map((order) => order.order_number);
+    const unseen = newOrderNumbers.filter((orderNumber) => !seenNewOrdersRef.current.has(orderNumber));
+
+    if (!unseen.length) {
       stopNewOrderAlert();
       return;
     }
-    playNewOrderSound();
-    if (newOrderAlertIntervalRef.current === null) {
-      newOrderAlertIntervalRef.current = window.setInterval(playNewOrderSound, 3000);
+
+    unseen.forEach((orderNumber) => seenNewOrdersRef.current.add(orderNumber));
+    window.localStorage.setItem(seenNewOrdersStorageKey, JSON.stringify([...seenNewOrdersRef.current].slice(-250)));
+
+    if (!muted && !audioBlocked) {
+      playNewOrderSound();
     }
-    return stopNewOrderAlert;
-  }, [audioBlocked, hasUnhandledNewOrders, muted, playNewOrderSound, stopNewOrderAlert]);
+  }, [audioBlocked, muted, orders, playNewOrderSound, stopNewOrderAlert]);
 
   const todayOrders = useMemo(() => {
     const todayKey = easternDateKey(new Date().toISOString());
@@ -644,6 +707,48 @@ export function AdminDashboard() {
   async function copyPhone(phone: string) {
     await navigator.clipboard?.writeText(phone).catch(() => undefined);
   }
+
+  const printKitchenTicket = useCallback(async (orderNumber: string) => {
+    setNetworkPrintingOrders((current) => new Set(current).add(orderNumber));
+    try {
+      const response = await fetch("/api/admin/print-ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderNumber })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Printer did not respond.");
+      saveKitchenPrintState(orderNumber, {
+        status: "printed",
+        message: "Printed",
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      saveKitchenPrintState(orderNumber, {
+        status: "failed",
+        message: error instanceof Error ? error.message : "Printer did not respond.",
+        updatedAt: new Date().toISOString()
+      });
+    } finally {
+      setNetworkPrintingOrders((current) => {
+        const next = new Set(current);
+        next.delete(orderNumber);
+        return next;
+      });
+    }
+  }, [saveKitchenPrintState]);
+
+  useEffect(() => {
+    if (!printStatusLoaded) return;
+    orders.filter(shouldAutoPrintOrder).forEach((order) => {
+      const orderNumber = order.order_number;
+      if (networkPrintingOrders.has(orderNumber)) return;
+      if (autoPrintAttemptedRef.current.has(orderNumber)) return;
+      if (kitchenPrintStatusRef.current[orderNumber]) return;
+      autoPrintAttemptedRef.current.add(orderNumber);
+      void printKitchenTicket(orderNumber);
+    });
+  }, [networkPrintingOrders, orders, printKitchenTicket, printStatusLoaded]);
 
   function openAdminSection(section: AdminSection, label?: string) {
     setActiveSection(section);
@@ -910,6 +1015,20 @@ export function AdminDashboard() {
         {audioBlocked && !muted && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">Browser blocked sound. Click Enable sound once to allow alerts.</span>}
       </div>
 
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Orders today", dailySummary.totalOrders],
+          ["Revenue today", formatPrice(dailySummary.totalSales)],
+          ["Pay-at-pickup", formatPrice(dailySummary.cashSales)],
+          ["Stripe paid", formatPrice(dailySummary.stripeSales)]
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-4 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-[0.12em] text-china-red">{label}</p>
+            <p className="mt-1 text-2xl font-black text-stone-950">{value}</p>
+          </div>
+        ))}
+      </div>
+
       <div className="mt-5 lg:hidden">
         <button
           onClick={() => setAdminMenuOpen((current) => !current)}
@@ -1012,11 +1131,12 @@ export function AdminDashboard() {
         ))}
       </div>
 
-      <div className="mt-5 grid gap-3 xl:grid-cols-2">
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {visible.map((order) => {
           const expanded = expandedOrders.has(order.order_number);
           const itemsToShow = expanded ? order.order_items : order.order_items.slice(0, 3);
           const remainingItems = Math.max(0, order.order_items.length - itemsToShow.length);
+          const printState = kitchenPrintStatus[order.order_number];
           return (
           <article key={order.order_number} className={`rounded-lg border p-2 shadow-sm ${order.status === "new" ? "border-2 border-china-red bg-red-50 ring-2 ring-china-gold/50" : "border-china-gold/50 bg-white"}`}>
             <div className="flex flex-col justify-between gap-2 lg:flex-row">
@@ -1038,13 +1158,25 @@ export function AdminDashboard() {
                 {Number(order.discount_amount ?? 0) > 0 && (
                   <p className="mt-1 text-sm font-bold text-china-red">Promo{order.promo_code ? ` ${order.promo_code}` : ""}: -{formatPrice(Number(order.discount_amount))}</p>
                 )}
-                <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-black uppercase">
+                <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-black">
                   {order.confirmation_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Confirmation email sent</span>}
-                  {order.confirmation_email_error && <span className="rounded-md bg-amber-100 px-2 py-1 text-amber-900">Confirmation email failed</span>}
+                  {order.confirmation_email_error && (
+                    <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.confirmation_email_error}>
+                      {emailErrorLabel("Confirmation email", order.confirmation_email_error)}
+                    </span>
+                  )}
                   {order.accepted_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Accepted email sent</span>}
-                  {order.accepted_email_error && <span className="rounded-md bg-amber-100 px-2 py-1 text-amber-900">Accepted email failed</span>}
+                  {order.accepted_email_error && (
+                    <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.accepted_email_error}>
+                      {emailErrorLabel("Accepted email", order.accepted_email_error)}
+                    </span>
+                  )}
                   {order.ready_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Ready email sent</span>}
-                  {order.ready_email_error && <span className="rounded-md bg-amber-100 px-2 py-1 text-amber-900">Ready email failed</span>}
+                  {order.ready_email_error && (
+                    <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.ready_email_error}>
+                      {emailErrorLabel("Ready email", order.ready_email_error)}
+                    </span>
+                  )}
                 </div>
                 {order.delivery_address && <p className="mt-1 text-stone-600">{order.delivery_address}</p>}
                 {order.customer_notes && (
@@ -1053,7 +1185,7 @@ export function AdminDashboard() {
                   </p>
                 )}
               </div>
-              <div className="grid gap-2 sm:min-w-52">
+              <div className="grid gap-2 sm:min-w-56">
                 <select
                   value={order.status}
                   onChange={(event) => {
@@ -1077,7 +1209,7 @@ export function AdminDashboard() {
                   <button
                     onClick={() => setAcceptingOrder(order.order_number)}
                     disabled={updatingOrders.has(order.order_number)}
-                    className="focus-ring min-h-10 rounded-md bg-china-red px-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:bg-stone-400"
+                    className="focus-ring min-h-11 rounded-md bg-china-red px-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:bg-stone-400"
                   >
                     Accept / Confirm order
                   </button>
@@ -1088,7 +1220,7 @@ export function AdminDashboard() {
                       key={nextStatus}
                       onClick={() => updateStatus(order.order_number, nextStatus)}
                       disabled={updatingOrders.has(order.order_number)}
-                      className={`focus-ring min-h-9 rounded-md border px-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-60 ${statusStyles[nextStatus]}`}
+                      className={`focus-ring min-h-10 rounded-md border px-2 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60 ${statusStyles[nextStatus]}`}
                     >
                       {statusLabel(nextStatus)}
                     </button>
@@ -1097,10 +1229,29 @@ export function AdminDashboard() {
                 <button
                   onClick={() => updateStatus(order.order_number, "ready")}
                   disabled={updatingOrders.has(order.order_number)}
-                  className="focus-ring min-h-10 rounded-md border border-china-green bg-china-green px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="focus-ring min-h-11 rounded-md border border-china-green bg-china-green px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Mark Ready & Email Customer
                 </button>
+                <button
+                  onClick={() => printKitchenTicket(order.order_number)}
+                  disabled={networkPrintingOrders.has(order.order_number)}
+                  className="focus-ring min-h-11 rounded-md border border-china-red bg-china-red px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400"
+                >
+                  {networkPrintingOrders.has(order.order_number)
+                    ? "Sending to printer..."
+                    : printState?.status === "failed"
+                      ? "Retry Kitchen Print"
+                      : printState?.status === "printed"
+                        ? "Reprint Kitchen Ticket"
+                        : "Kitchen Print"}
+                </button>
+                {printState?.status === "printed" && (
+                  <p className="rounded-md bg-green-100 px-2 py-1 text-xs font-black uppercase text-green-800">Printed</p>
+                )}
+                {printState?.status === "failed" && (
+                  <p className="rounded-md bg-amber-100 px-2 py-1 text-xs font-bold text-amber-950">Printer Offline / Failed: {printState.message ?? "Printer did not respond."}</p>
+                )}
                 <div className="grid grid-cols-4 gap-2">
                   {activeStatuses.includes(order.status) ? (
                     <button onClick={() => openEditOrder(order)} className="focus-ring inline-flex min-h-9 items-center justify-center rounded-md border border-china-gold/70 bg-white text-stone-900" aria-label="Edit order">

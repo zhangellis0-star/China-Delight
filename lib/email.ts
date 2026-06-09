@@ -47,22 +47,39 @@ function emailEnv() {
   };
 }
 
+function extractEmailAddress(value: string) {
+  const bracketMatch = value.match(/<([^>]+)>/);
+  return (bracketMatch?.[1] ?? value).trim();
+}
+
+function emailDomain(value: string) {
+  const address = extractEmailAddress(value);
+  return address.includes("@") ? address.split("@").pop()?.toLowerCase() ?? null : null;
+}
+
 export function getEmailDiagnostics() {
   const { apiKey, from } = emailEnv();
   const normalizedFrom = from.toLowerCase();
+  const fromDomain = emailDomain(from);
   const warnings = [];
   if (!apiKey) warnings.push("RESEND_API_KEY is missing.");
   if (!from) warnings.push("ORDER_FROM_EMAIL is missing.");
+  if (from && !fromDomain) warnings.push("ORDER_FROM_EMAIL should include a valid email address, for example China Delight <orders@yourdomain.com>.");
   if (normalizedFrom.includes("onboarding@resend.dev")) {
     warnings.push("Resend onboarding@resend.dev may only send to verified/account emails. Use a verified domain for production.");
+  }
+  if (fromDomain && ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "aol.com"].includes(fromDomain)) {
+    warnings.push("ORDER_FROM_EMAIL should use a domain verified in Resend; public mailbox domains usually cannot be used as the sender.");
   }
   return {
     hasResendApiKey: Boolean(apiKey),
     resendApiKeyLength: apiKey.length,
     hasOrderFromEmail: Boolean(from),
     orderFromEmail: from || null,
+    orderFromDomain: fromDomain,
     canCreateEmailClient: Boolean(apiKey && from),
     nodeEnv: process.env.NODE_ENV ?? "unknown",
+    domainVerificationNote: fromDomain && fromDomain !== "resend.dev" ? "Confirm this sender domain is verified in the Resend dashboard." : null,
     warnings
   };
 }
@@ -123,6 +140,18 @@ function orderRowsHtml(order: EmailOrder) {
     .join("");
 }
 
+async function resendErrorMessage(response: Response) {
+  const fallback = response.statusText || "Resend rejected the email.";
+  const raw = (await response.text()).slice(0, 1000);
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as { message?: string; name?: string; error?: string };
+    return [parsed.name, parsed.message ?? parsed.error].filter(Boolean).join(": ") || raw;
+  } catch {
+    return raw;
+  }
+}
+
 async function sendEmail(input: SendEmailInput): Promise<EmailResult> {
   const { apiKey, from } = emailEnv();
   if (!apiKey || !from) {
@@ -150,7 +179,7 @@ async function sendEmail(input: SendEmailInput): Promise<EmailResult> {
       })
     });
     if (!response.ok) {
-      const message = (await response.text()).slice(0, 500);
+      const message = await resendErrorMessage(response);
       console.error("[email] Resend send failed", {
         status: response.status,
         message,
