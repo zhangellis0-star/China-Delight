@@ -286,8 +286,9 @@ export function AdminDashboard() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [filter, setFilter] = useState<AdminFilter>("active");
   const [query, setQuery] = useState("");
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -314,6 +315,23 @@ export function AdminDashboard() {
     editingOrderRef.current = Boolean(editingOrder);
   }, [editingOrder]);
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem("china-delight-admin-sound");
+    if (saved === "muted") {
+      setMuted(true);
+      setAudioUnlocked(false);
+      return;
+    }
+    if (saved === "enabled") {
+      setMuted(false);
+      setAudioUnlocked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("china-delight-admin-sound", muted ? "muted" : "enabled");
+  }, [muted]);
+
   const stopNewOrderAlert = useCallback(() => {
     if (newOrderAlertIntervalRef.current !== null) {
       window.clearInterval(newOrderAlertIntervalRef.current);
@@ -322,39 +340,60 @@ export function AdminDashboard() {
   }, []);
 
   const playNewOrderSound = useCallback(() => {
-    if (muted || !audioUnlocked) return;
+    if (muted || audioBlocked) return;
     const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
     try {
       const context = new AudioContextClass();
-      const first = context.createOscillator();
-      const second = context.createOscillator();
-      const gain = context.createGain();
-      first.type = "sine";
-      second.type = "sine";
-      first.frequency.value = 880;
-      second.frequency.value = 660;
-      gain.gain.value = 0.08;
-      first.connect(gain);
-      second.connect(gain);
-      gain.connect(context.destination);
-      first.start();
-      first.stop(context.currentTime + 0.16);
-      second.start(context.currentTime + 0.18);
-      second.stop(context.currentTime + 0.34);
-      window.setTimeout(() => {
-        context.close().catch(() => undefined);
-      }, 420);
+      const beep = () => {
+        const first = context.createOscillator();
+        const second = context.createOscillator();
+        const gain = context.createGain();
+        first.type = "sine";
+        second.type = "sine";
+        first.frequency.value = 880;
+        second.frequency.value = 660;
+        gain.gain.value = 0.08;
+        first.connect(gain);
+        second.connect(gain);
+        gain.connect(context.destination);
+        first.start();
+        first.stop(context.currentTime + 0.16);
+        second.start(context.currentTime + 0.18);
+        second.stop(context.currentTime + 0.34);
+        setAudioBlocked(false);
+        setAudioUnlocked(true);
+        window.setTimeout(() => {
+          context.close().catch(() => undefined);
+        }, 420);
+      };
+      if (context.state === "suspended") {
+        void context.resume().then(beep).catch(() => {
+          if (!audioUnlocked) setAudioBlocked(true);
+          stopNewOrderAlert();
+          context.close().catch(() => undefined);
+        });
+      } else {
+        beep();
+      }
     } catch {
+      if (!audioUnlocked) setAudioBlocked(true);
       stopNewOrderAlert();
     }
-  }, [audioUnlocked, muted, stopNewOrderAlert]);
+  }, [audioBlocked, audioUnlocked, muted, stopNewOrderAlert]);
 
   function toggleMute() {
-    setAudioUnlocked(true);
+    if (audioBlocked || !audioUnlocked) {
+      setAudioUnlocked(true);
+      setAudioBlocked(false);
+      setMuted(false);
+      window.localStorage.setItem("china-delight-admin-sound", "enabled");
+      return;
+    }
     setMuted((current) => {
       const nextMuted = !current;
       if (nextMuted) stopNewOrderAlert();
+      if (!nextMuted) setAudioBlocked(false);
       return nextMuted;
     });
   }
@@ -438,7 +477,7 @@ export function AdminDashboard() {
   const hasUnhandledNewOrders = useMemo(() => orders.some((order) => order.status === "new"), [orders]);
 
   useEffect(() => {
-    if (!hasUnhandledNewOrders || muted || !audioUnlocked) {
+    if (!hasUnhandledNewOrders || muted || audioBlocked) {
       stopNewOrderAlert();
       return;
     }
@@ -447,7 +486,7 @@ export function AdminDashboard() {
       newOrderAlertIntervalRef.current = window.setInterval(playNewOrderSound, 3000);
     }
     return stopNewOrderAlert;
-  }, [audioUnlocked, hasUnhandledNewOrders, muted, playNewOrderSound, stopNewOrderAlert]);
+  }, [audioBlocked, hasUnhandledNewOrders, muted, playNewOrderSound, stopNewOrderAlert]);
 
   const todayOrders = useMemo(() => {
     const todayKey = easternDateKey(new Date().toISOString());
@@ -840,7 +879,7 @@ export function AdminDashboard() {
           </button>
           <button onClick={toggleMute} className="focus-ring inline-flex items-center gap-2 rounded-md border border-china-gold/70 bg-white px-4 py-3 font-bold text-stone-800">
             {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-            {!audioUnlocked ? "Enable sound" : muted ? "Unmute" : "Mute"}
+            {muted ? "Unmute" : audioBlocked ? "Enable sound" : "Mute"}
           </button>
           <button onClick={logout} className="focus-ring rounded-md border border-china-gold/70 bg-white px-4 py-3 font-bold text-stone-800">
             Sign out
@@ -852,6 +891,7 @@ export function AdminDashboard() {
         <span>{lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Loading latest orders..."}</span>
         {refreshError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{refreshError}</span>}
         {operationsError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{operationsError}</span>}
+        {audioBlocked && !muted && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">Browser blocked sound. Click Enable sound once to allow alerts.</span>}
       </div>
 
       <div className="mt-5 lg:hidden">
