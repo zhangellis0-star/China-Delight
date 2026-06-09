@@ -307,9 +307,12 @@ export function AdminDashboard() {
   const [addItemSearch, setAddItemSearch] = useState("");
   const [newItemDraft, setNewItemDraft] = useState<NewItemDraft | null>(null);
   const previousNewOrders = useRef<Set<string>>(new Set());
+  const ordersRef = useRef<AdminOrder[]>([]);
   const updatingOrdersRef = useRef<Set<string>>(new Set());
   const editingOrderRef = useRef(false);
   const newOrderAlertIntervalRef = useRef<number | null>(null);
+  const activeAudioContextsRef = useRef<Set<AudioContext>>(new Set());
+  const soundTimeoutsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     editingOrderRef.current = Boolean(editingOrder);
@@ -337,6 +340,12 @@ export function AdminDashboard() {
       window.clearInterval(newOrderAlertIntervalRef.current);
       newOrderAlertIntervalRef.current = null;
     }
+    soundTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    soundTimeoutsRef.current.clear();
+    activeAudioContextsRef.current.forEach((context) => {
+      context.close().catch(() => undefined);
+    });
+    activeAudioContextsRef.current.clear();
   }, []);
 
   const playNewOrderSound = useCallback(() => {
@@ -345,6 +354,7 @@ export function AdminDashboard() {
     if (!AudioContextClass) return;
     try {
       const context = new AudioContextClass();
+      activeAudioContextsRef.current.add(context);
       const beep = () => {
         const first = context.createOscillator();
         const second = context.createOscillator();
@@ -363,15 +373,19 @@ export function AdminDashboard() {
         second.stop(context.currentTime + 0.34);
         setAudioBlocked(false);
         setAudioUnlocked(true);
-        window.setTimeout(() => {
-          context.close().catch(() => undefined);
+        const timeoutId = window.setTimeout(() => {
+          soundTimeoutsRef.current.delete(timeoutId);
+          activeAudioContextsRef.current.delete(context);
+          if (context.state !== "closed") context.close().catch(() => undefined);
         }, 420);
+        soundTimeoutsRef.current.add(timeoutId);
       };
       if (context.state === "suspended") {
         void context.resume().then(beep).catch(() => {
           if (!audioUnlocked) setAudioBlocked(true);
+          activeAudioContextsRef.current.delete(context);
           stopNewOrderAlert();
-          context.close().catch(() => undefined);
+          if (context.state !== "closed") context.close().catch(() => undefined);
         });
       } else {
         beep();
@@ -447,6 +461,7 @@ export function AdminDashboard() {
         const nextOrders = [...serverOrders, ...localOrders].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
         const nextNew = new Set(nextOrders.filter((order) => order.status === "new").map((order) => order.order_number));
         previousNewOrders.current = nextNew;
+        ordersRef.current = nextOrders;
         setOrders(nextOrders);
         setLastUpdated(new Date());
         setRefreshError(null);
@@ -580,11 +595,11 @@ export function AdminDashboard() {
   async function updateStatus(orderNumber: string, nextStatus: OrderStatus, estimatedReadyMinutes?: number) {
     updatingOrdersRef.current = new Set(updatingOrdersRef.current).add(orderNumber);
     setUpdatingOrders(new Set(updatingOrdersRef.current));
-    setOrders((current) => current.map((order) => (order.order_number === orderNumber ? { ...order, status: nextStatus } : order)));
+    const optimisticOrders = ordersRef.current.map((order) => (order.order_number === orderNumber ? { ...order, status: nextStatus } : order));
+    ordersRef.current = optimisticOrders;
+    setOrders(optimisticOrders);
     if (nextStatus !== "new") {
-      const remainingNewOrders = new Set(
-        orders.filter((order) => order.status === "new" && order.order_number !== orderNumber).map((order) => order.order_number)
-      );
+      const remainingNewOrders = new Set(optimisticOrders.filter((order) => order.status === "new").map((order) => order.order_number));
       previousNewOrders.current = remainingNewOrders;
       if (remainingNewOrders.size === 0) stopNewOrderAlert();
     }
@@ -597,10 +612,11 @@ export function AdminDashboard() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Status update failed.");
       if (data.order) {
-        setOrders((current) => current.map((order) => (order.order_number === orderNumber ? { ...order, ...data.order } : order)));
+        const confirmedOrders = ordersRef.current.map((order) => (order.order_number === orderNumber ? { ...order, ...data.order } : order));
+        ordersRef.current = confirmedOrders;
+        setOrders(confirmedOrders);
         if (data.order.status && data.order.status !== "new") {
-          const nextNewOrders = new Set(previousNewOrders.current);
-          nextNewOrders.delete(orderNumber);
+          const nextNewOrders = new Set(confirmedOrders.filter((order) => order.status === "new").map((order) => order.order_number));
           previousNewOrders.current = nextNewOrders;
           if (nextNewOrders.size === 0) stopNewOrderAlert();
         }
