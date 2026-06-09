@@ -40,7 +40,7 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 sm:flex">
+        <div className="hidden items-center gap-3 lg:flex">
           <a href={restaurant.phoneHref} className="focus-ring inline-flex items-center gap-2 rounded-md border border-china-red px-4 py-3 font-bold text-china-red">
             <Phone className="h-5 w-5" />
             {restaurant.phone}
@@ -52,9 +52,15 @@ export function SiteHeader() {
           </Link>
         </div>
 
-        <button onClick={() => setOpen((value) => !value)} className="focus-ring rounded-md border border-stone-300 p-3 lg:hidden" aria-label="Open menu">
-          <Menu className="h-6 w-6" />
-        </button>
+        <div className="flex items-center gap-2 lg:hidden">
+          <Link href="/cart" className="focus-ring relative inline-flex min-h-12 items-center justify-center rounded-md bg-china-red px-3 font-bold text-white" aria-label={`Cart with ${count} items`}>
+            <ShoppingCart className="h-5 w-5" />
+            {count > 0 && <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-china-gold px-1 text-center text-xs font-black text-china-ink">{count}</span>}
+          </Link>
+          <button onClick={() => setOpen((value) => !value)} className="focus-ring rounded-md border border-stone-300 p-3" aria-label="Open menu">
+            <Menu className="h-6 w-6" />
+          </button>
+        </div>
       </div>
 
       {open && (
