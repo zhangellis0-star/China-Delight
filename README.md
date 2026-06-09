@@ -39,12 +39,30 @@ Use the same variables in Vercel Project Settings -> Environment Variables. At m
 
 Checkout totals are computed in `lib/pricing.ts` (`calculateCart`) from `lib/restaurant.ts`:
 
-- **Tax** = subtotal × `NEXT_PUBLIC_TAX_RATE` (Connecticut prepared meals = `0.0735` = 7.35%).
-- **Processing fee** = subtotal × `NEXT_PUBLIC_PROCESSING_FEE_RATE` (`0.06` = 6%).
+- **Promo discount** = optional code applied at checkout (see Promo Codes below). Applied to the subtotal before tax and fee. The discount can never exceed the subtotal, so the total never goes below `$0`.
+- **Tax** = discounted subtotal × `NEXT_PUBLIC_TAX_RATE` (Connecticut prepared meals = `0.0735` = 7.35%).
+- **Processing fee** = discounted subtotal × `NEXT_PUBLIC_PROCESSING_FEE_RATE` (`0.06` = 6%).
 - **Tip** = optional customer-selected amount at checkout (none selected by default).
-- **Total** = subtotal + tax + processing fee + tip.
+- **Total** = discounted subtotal + tax + processing fee + tip.
 
-These rates are read from env vars (never hardcoded). Both cash and Stripe orders save subtotal, tax, processing fee, tip, and total to Supabase, and Stripe is charged the exact final total (tax, processing fee, and tip are added as their own line items). The breakdown is shown on checkout, confirmation page, admin dashboard, and print ticket.
+These rates are read from env vars (never hardcoded). Both cash and Stripe orders save subtotal, promo code, discount, tax, processing fee, tip, and total to Supabase. The breakdown is shown on checkout, confirmation page, admin dashboard, print ticket, order emails, and order status.
+
+## Promo Codes / Discounts / Store Credit
+
+Admins create and manage promo codes from the **Promo Codes** section of the `/admin` dashboard (sidebar/dropdown). Each code has:
+
+- Code (e.g. `WELCOME10`) and description (e.g. `10% off first order`)
+- Discount type: **Percentage** (value `10` = 10% off), **Fixed dollar** (value `5` = `$5.00` off), or **Store credit** (value `5` = `$5.00` off)
+- Optional minimum order subtotal, expiration date, and max uses
+- Active/inactive toggle and a live usage count
+
+Customers enter a code at checkout, press **Apply** (or **Remove code**), and the totals recalculate. Validation happens on `POST /api/promo/validate` and again, authoritatively, when the order is placed (`POST /api/checkout`) so the discount cannot be tampered with. Errors shown: invalid code, inactive code, expired code, minimum-order not met, and usage limit reached.
+
+The discount is applied **before** tax and the processing fee. When an order is saved, `promo_code` and `discount_amount` are stored on the order and `promo_codes.used_count` is incremented once the order saves successfully. If an admin later edits an order's items, the saved discount is kept but clamped so it never exceeds the new subtotal.
+
+Admin promo routes (`GET/POST/PATCH/DELETE /api/admin/promo-codes`) are protected by the existing admin session. A code that has already been used cannot be deleted (disable it instead) to preserve order history. The customer validate route never exposes admin-only fields such as `used_count` or `max_uses`.
+
+**Rerun `sql/schema.sql`** after pulling this change so the live database has the new `promo_codes` table and the `orders.promo_code` / `orders.discount_amount` columns.
 
 ## Supabase Setup
 

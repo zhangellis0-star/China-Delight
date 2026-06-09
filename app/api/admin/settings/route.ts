@@ -16,6 +16,10 @@ function response(settings: Awaited<ReturnType<typeof getOperationalSettings>>) 
     orderingAllowed: orderingAllowed(settings),
     busyExtraMinutes: busyExtraMinutes(settings.busyMode),
     nextBoundary: nextStoreBoundary()
+  }, {
+    headers: {
+      "Cache-Control": "no-store, max-age=0"
+    }
   });
 }
 

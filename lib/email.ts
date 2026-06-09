@@ -19,6 +19,8 @@ type EmailOrder = {
   tax: number;
   processing_fee?: number | null;
   tip_amount?: number | null;
+  promo_code?: string | null;
+  discount_amount?: number | null;
   total: number;
   order_items: Array<{
     item_number: string;
@@ -189,7 +191,7 @@ Items:
 ${orderRows(order)}
 
 Subtotal: ${formatPrice(order.subtotal)}
-Tax: ${formatPrice(order.tax)}
+${Number(order.discount_amount ?? 0) > 0 ? `Promo discount${order.promo_code ? ` (${order.promo_code})` : ""}: -${formatPrice(Number(order.discount_amount))}\n` : ""}Tax: ${formatPrice(order.tax)}
 Processing fee: ${formatPrice(order.processing_fee ?? 0)}
 Tip: ${formatPrice(order.tip_amount ?? 0)}
 Total: ${formatPrice(order.total)}
@@ -209,7 +211,7 @@ Call us if you need to change your order.`;
     <p><strong>Payment:</strong> ${escapeHtml(paymentText(order))}</p>
     <h2>Items</h2>
     <ul>${orderRowsHtml(order)}</ul>
-    <p>Subtotal: ${formatPrice(order.subtotal)}<br>Tax: ${formatPrice(order.tax)}<br>Processing fee: ${formatPrice(order.processing_fee ?? 0)}<br>Tip: ${formatPrice(order.tip_amount ?? 0)}</p>
+    <p>Subtotal: ${formatPrice(order.subtotal)}<br>${Number(order.discount_amount ?? 0) > 0 ? `Promo discount${order.promo_code ? ` (${escapeHtml(order.promo_code)})` : ""}: -${formatPrice(Number(order.discount_amount))}<br>` : ""}Tax: ${formatPrice(order.tax)}<br>Processing fee: ${formatPrice(order.processing_fee ?? 0)}<br>Tip: ${formatPrice(order.tip_amount ?? 0)}</p>
     <p style="font-size:20px"><strong>Total: ${formatPrice(order.total)}</strong></p>
     <p><a href="${lookupUrl}">Check your order status</a></p>
     <p><strong>${escapeHtml(restaurant.phone)}</strong><br>${escapeHtml(restaurant.address)}</p>

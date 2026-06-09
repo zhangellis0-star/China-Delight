@@ -35,6 +35,8 @@ type TicketOrder = {
   tax: number;
   processing_fee?: number | null;
   tip_amount?: number | null;
+  promo_code?: string | null;
+  discount_amount?: number | null;
   total: number;
   order_items: Array<{
     item_number: string;
@@ -52,7 +54,7 @@ function localTicket(orderNumber: string): TicketOrder | null {
     orderNumber: string;
     customer: { name: string; phone: string; email?: string; notes?: string; paymentMethod?: PaymentMethod; pickupTimeType?: PickupTimeType; scheduledPickupTime?: string };
     items: CartItem[];
-    totals: { subtotal: number; tax: number; processingFee?: number; tip?: number; total: number };
+    totals: { subtotal: number; discount?: number; tax: number; processingFee?: number; tip?: number; total: number; promoCode?: string | null };
     status: OrderStatus;
   };
   if (parsed.orderNumber !== orderNumber) return null;
@@ -77,6 +79,8 @@ function localTicket(orderNumber: string): TicketOrder | null {
     tax: parsed.totals.tax,
     processing_fee: parsed.totals.processingFee ?? 0,
     tip_amount: parsed.totals.tip ?? 0,
+    promo_code: parsed.totals.promoCode ?? null,
+    discount_amount: parsed.totals.discount ?? 0,
     total: parsed.totals.total,
     order_items: parsed.items.map((item) => ({
       item_number: item.number,
@@ -172,6 +176,9 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
         </div>
         <div className="mt-5 grid gap-1 text-right text-lg">
           <p>Subtotal: {formatPrice(order.subtotal)}</p>
+          {Number(order.discount_amount ?? 0) > 0 && (
+            <p>Promo discount{order.promo_code ? ` (${order.promo_code})` : ""}: -{formatPrice(Number(order.discount_amount))}</p>
+          )}
           <p>Tax: {formatPrice(order.tax)}</p>
           <p>Processing fee: {formatPrice(order.processing_fee ?? 0)}</p>
           <p>Tip: {formatPrice(order.tip_amount ?? 0)}</p>

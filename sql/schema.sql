@@ -102,6 +102,27 @@ alter table public.orders add column if not exists accepted_email_error text;
 alter table public.orders add column if not exists ready_email_sent_at timestamptz;
 alter table public.orders add column if not exists ready_email_error text;
 alter table public.orders alter column customer_email drop not null;
+alter table public.orders add column if not exists promo_code text;
+alter table public.orders add column if not exists discount_amount numeric(10, 2) not null default 0;
+
+-- Promo codes / discounts / store credit managed from the admin dashboard.
+create table if not exists public.promo_codes (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  description text,
+  discount_type text not null default 'percentage' check (discount_type in ('percentage', 'fixed', 'credit')),
+  discount_value numeric(10, 2) not null default 0,
+  minimum_subtotal numeric(10, 2),
+  expires_at timestamptz,
+  max_uses integer,
+  used_count integer not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists promo_codes_code_idx on public.promo_codes(code);
+create index if not exists promo_codes_active_idx on public.promo_codes(active);
 
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
@@ -150,6 +171,7 @@ alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 alter table public.operational_settings enable row level security;
 alter table public.phone_verifications enable row level security;
+alter table public.promo_codes enable row level security;
 
 -- The app uses the service role key on the server for admin reads/writes.
 -- Public browser clients do not receive direct table access by default.

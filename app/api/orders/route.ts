@@ -67,55 +67,127 @@ export async function PATCH(request: Request) {
         pickupTimeType?: "asap" | "scheduled";
         scheduledPickupTime?: string | null;
         tipAmount?: number;
-        items: Array<{ id: string; quantity: number; unitPrice: number }>;
+        items: Array<{
+          id?: string | null;
+          menuItemId?: string;
+          itemNumber?: string;
+          itemName?: string;
+          category?: string;
+          quantity: number;
+          unitPrice: number;
+          customization?: Record<string, unknown> | null;
+          extraChargeLabel?: string | null;
+          extraChargeAmount?: number | null;
+        }>;
       };
   if (!body.orderNumber) return NextResponse.json({ error: "Missing order number." }, { status: 400 });
 
   if (body.action === "edit") {
-    const safeItems = body.items
-      .map((item) => ({
-        id: String(item.id ?? ""),
+    const round2 = (value: number) => Number(value.toFixed(2));
+
+    // Normalize each item: clamp money to >= 0, fold the optional extra charge into the per-unit price,
+    // and keep the extra-charge label/amount inside the customization JSON for display.
+    const safeItems = body.items.map((item) => {
+      const base = Math.max(0, Number(item.unitPrice));
+      const extraCharge = Math.max(0, Number(item.extraChargeAmount ?? 0) || 0);
+      const extraLabel = (item.extraChargeLabel ?? "").toString().trim();
+      const effectiveUnitPrice = round2(base + extraCharge);
+      const customization: Record<string, unknown> = { ...(item.customization ?? {}) };
+      delete customization.extraChargeLabel;
+      delete customization.extraChargeAmount;
+      if (extraCharge > 0) {
+        customization.extraChargeAmount = extraCharge;
+        customization.extraChargeLabel = extraLabel || "Extra charge";
+      }
+      return {
+        id: item.id ? String(item.id) : null,
+        menuItemId: (item.menuItemId ?? "").toString(),
+        itemNumber: (item.itemNumber ?? "").toString(),
+        itemName: (item.itemName ?? "").toString(),
+        category: (item.category ?? "").toString(),
         quantity: Math.round(Number(item.quantity)),
-        unitPrice: Number(item.unitPrice)
-      }))
-      .filter((item) => item.id);
+        unitPrice: effectiveUnitPrice,
+        baseUnitPrice: base,
+        extraCharge,
+        customization
+      };
+    });
 
     if (!body.customerName?.trim() || !body.customerPhone?.trim() || !body.customerEmail?.trim()) {
       return NextResponse.json({ error: "Name, phone, and email are required." }, { status: 400 });
     }
     if (!safeItems.length) return NextResponse.json({ error: "An order must have at least one item." }, { status: 400 });
-    if (safeItems.some((item) => item.quantity < 1 || !Number.isFinite(item.unitPrice) || item.unitPrice < 0)) {
-      return NextResponse.json({ error: "Item quantities and prices must be valid." }, { status: 400 });
+    if (safeItems.some((item) => !Number.isFinite(item.quantity) || item.quantity < 1)) {
+      return NextResponse.json({ error: "Every item needs a quantity of 1 or more." }, { status: 400 });
+    }
+    if (safeItems.some((item) => !Number.isFinite(item.baseUnitPrice) || item.baseUnitPrice < 0)) {
+      return NextResponse.json({ error: "Item prices cannot be negative." }, { status: 400 });
+    }
+    if (safeItems.some((item) => !Number.isFinite(item.extraCharge) || item.extraCharge < 0)) {
+      return NextResponse.json({ error: "Extra charge amounts cannot be negative." }, { status: 400 });
+    }
+    // New items (no existing id) must carry full identity so the not-null order_items columns are satisfied.
+    if (safeItems.some((item) => !item.id && (!item.menuItemId || !item.itemNumber || !item.itemName || !item.category))) {
+      return NextResponse.json({ error: "A new item is missing menu information. Please re-select it." }, { status: 400 });
     }
 
-    const subtotal = Number(safeItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0).toFixed(2));
-    const tax = Number((subtotal * restaurant.taxRate).toFixed(2));
-    const processingFee = Number((subtotal * restaurant.processingFeeRate).toFixed(2));
-    const tipAmount = Number(Math.max(0, Number(body.tipAmount ?? 0)).toFixed(2));
-    const total = Number((subtotal + tax + processingFee + tipAmount).toFixed(2));
+    const subtotal = round2(safeItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0));
+    const tipAmount = round2(Math.max(0, Number(body.tipAmount ?? 0)));
     const now = new Date().toISOString();
 
-    const { data: order, error: orderLookupError } = await supabase.from("orders").select("id").eq("order_number", body.orderNumber).single();
+    const { data: order, error: orderLookupError } = await supabase.from("orders").select("id, discount_amount, promo_code").eq("order_number", body.orderNumber).single();
     if (orderLookupError || !order) return NextResponse.json({ error: orderLookupError?.message ?? "Order not found." }, { status: 404 });
+
+    // Keep the original promo discount, clamped so it can never exceed the new subtotal; recompute tax/fee on the discounted subtotal.
+    const discountAmount = round2(Math.min(subtotal, Math.max(0, Number(order.discount_amount ?? 0))));
+    const discountedSubtotal = Math.max(0, subtotal - discountAmount);
+    const tax = round2(discountedSubtotal * restaurant.taxRate);
+    const processingFee = round2(discountedSubtotal * restaurant.processingFeeRate);
+    const total = round2(Math.max(0, discountedSubtotal + tax + processingFee + tipAmount));
 
     const { data: existingItems, error: itemsLookupError } = await supabase.from("order_items").select("id").eq("order_id", order.id);
     if (itemsLookupError) return NextResponse.json({ error: itemsLookupError.message }, { status: 500 });
     const allowedIds = new Set((existingItems ?? []).map((item) => item.id));
-    if (safeItems.some((item) => !allowedIds.has(item.id))) return NextResponse.json({ error: "One or more items could not be edited." }, { status: 400 });
 
-    const itemResults = await Promise.all(
-      safeItems.map((item) =>
+    // Reject edits that reference an item id that does not belong to this order.
+    if (safeItems.some((item) => item.id && !allowedIds.has(item.id))) {
+      return NextResponse.json({ error: "One or more items could not be matched to this order. Please reopen the order and try again." }, { status: 400 });
+    }
+
+    // 1) Update existing items (quantity, folded unit price, and customization including any extra charge).
+    const updates = safeItems.filter((item) => item.id);
+    const updateResults = await Promise.all(
+      updates.map((item) =>
         supabase
           .from("order_items")
-          .update({ quantity: item.quantity, unit_price: item.unitPrice })
-          .eq("id", item.id)
+          .update({ quantity: item.quantity, unit_price: item.unitPrice, customization: item.customization })
+          .eq("id", item.id as string)
           .eq("order_id", order.id)
       )
     );
-    const itemError = itemResults.find((result) => result.error)?.error;
-    if (itemError) return NextResponse.json({ error: itemError.message }, { status: 500 });
+    const updateError = updateResults.find((result) => result.error)?.error;
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
 
-    const keepIds = new Set(safeItems.map((item) => item.id));
+    // 2) Insert brand-new items added by the admin.
+    const inserts = safeItems.filter((item) => !item.id);
+    if (inserts.length) {
+      const { error: insertError } = await supabase.from("order_items").insert(
+        inserts.map((item) => ({
+          order_id: order.id,
+          menu_item_id: item.menuItemId,
+          item_number: item.itemNumber,
+          item_name: item.itemName,
+          category: item.category,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          customization: item.customization
+        }))
+      );
+      if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+    }
+
+    // 3) Delete items the admin removed.
+    const keepIds = new Set(updates.map((item) => item.id));
     const removeIds = [...allowedIds].filter((id) => !keepIds.has(id));
     if (removeIds.length) {
       const { error: deleteError } = await supabase.from("order_items").delete().in("id", removeIds).eq("order_id", order.id);
@@ -135,13 +207,20 @@ export async function PATCH(request: Request) {
         tax,
         processing_fee: processingFee,
         tip_amount: tipAmount,
+        discount_amount: discountAmount,
         total,
         updated_at: now
       })
       .eq("id", order.id);
     if (orderUpdateError) return NextResponse.json({ error: orderUpdateError.message }, { status: 500 });
 
-    return NextResponse.json({ ok: true, totals: { subtotal, tax, processingFee, tip: tipAmount, total } });
+    const { data: updatedOrder } = await supabase
+      .from("orders")
+      .select("*, order_items(*)")
+      .eq("id", order.id)
+      .single();
+
+    return NextResponse.json({ ok: true, order: updatedOrder ?? null, totals: { subtotal, discount: discountAmount, tax, processingFee, tip: tipAmount, total } });
   }
 
   if (!("status" in body) || !body.status) return NextResponse.json({ error: "Missing status." }, { status: 400 });
@@ -164,7 +243,7 @@ export async function PATCH(request: Request) {
     .from("orders")
     .update(update)
     .eq("order_number", body.orderNumber)
-    .select("*, order_items(item_number, item_name, quantity, unit_price, customization)")
+    .select("*, order_items(*)")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -208,5 +287,5 @@ export async function PATCH(request: Request) {
       });
     }
   }
-  return NextResponse.json({ ok: true, readyEmailSent, acceptedEmailSent });
+  return NextResponse.json({ ok: true, order: updatedOrder, readyEmailSent, acceptedEmailSent });
 }

@@ -21,10 +21,20 @@ export default function CartPage() {
   const orderingOpen = settings?.orderingAllowed ?? isRestaurantOpen();
 
   useEffect(() => {
-    fetch("/api/settings")
+    function loadSettings() {
+      fetch("/api/settings", { cache: "no-store" })
       .then((response) => response.json())
       .then((data: PublicSettings) => setSettings(data))
       .catch(() => undefined);
+    }
+
+    loadSettings();
+    window.addEventListener("focus", loadSettings);
+    document.addEventListener("visibilitychange", loadSettings);
+    return () => {
+      window.removeEventListener("focus", loadSettings);
+      document.removeEventListener("visibilitychange", loadSettings);
+    };
   }, []);
 
   return (

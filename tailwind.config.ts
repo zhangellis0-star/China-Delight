@@ -6,15 +6,18 @@ const config: Config = {
     extend: {
       colors: {
         china: {
-          red: "#b91c1c",
-          deep: "#7f1d1d",
-          gold: "#f6c453",
-          ink: "#1f1712",
-          paper: "#fffaf0"
+          red: "#c92f4b",
+          deep: "#7a1d20",
+          gold: "#f5b642",
+          orange: "#ef7d24",
+          aqua: "#dff4f2",
+          green: "#7ba85b",
+          ink: "#211714",
+          paper: "#f4fbfb"
         }
       },
       boxShadow: {
-        warm: "0 18px 50px rgba(80, 24, 17, 0.14)"
+        warm: "0 18px 50px rgba(122, 29, 32, 0.16)"
       }
     }
   },

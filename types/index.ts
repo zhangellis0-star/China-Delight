@@ -59,6 +59,10 @@ export type CartCustomization = {
   noOnion?: boolean;
   noBroccoli?: boolean;
   notes?: string;
+  // Admin-only: an optional per-unit extra charge added when editing/adding an item in the dashboard.
+  // The order_items.unit_price stored already includes this amount; these fields are kept for display.
+  extraChargeLabel?: string;
+  extraChargeAmount?: number;
 };
 
 export type CartItem = {
@@ -74,10 +78,39 @@ export type CartItem = {
 
 export type CartTotals = {
   subtotal: number;
+  discount: number;
   tax: number;
   processingFee: number;
   tip: number;
   total: number;
+  promoCode?: string | null;
+};
+
+// "percentage": value is a percent (10 = 10% off). "fixed"/"credit": value is dollars (5 = $5.00 off).
+export type PromoDiscountType = "percentage" | "fixed" | "credit";
+
+export type PromoCode = {
+  id: string;
+  code: string;
+  description?: string | null;
+  discount_type: PromoDiscountType;
+  discount_value: number;
+  minimum_subtotal?: number | null;
+  expires_at?: string | null;
+  max_uses?: number | null;
+  used_count: number;
+  active: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+// What the checkout UI keeps after a code is applied (no admin-only fields like used_count/max_uses).
+export type AppliedPromo = {
+  code: string;
+  description?: string | null;
+  discountType: PromoDiscountType;
+  discountValue: number;
+  discountAmount: number;
 };
 
 export type OrderStatus = "new" | "accepted" | "preparing" | "ready" | "picked_up" | "completed" | "cancelled";

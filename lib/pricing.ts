@@ -27,16 +27,22 @@ export function customizationUpcharge(addOns: string[] = []) {
   return addOns.reduce((sum, name) => sum + (addonPrices[name as keyof typeof addonPrices] ?? 0), 0);
 }
 
-export function calculateCart(items: CartItem[], tip = 0) {
+// discountAmount is a pre-computed promo discount in dollars (see lib/promo.ts).
+// It is applied to the subtotal before tax and processing fee, and the discount can
+// never exceed the subtotal, so the total never drops below $0.
+export function calculateCart(items: CartItem[], tip = 0, discountAmount = 0) {
   const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const tax = subtotal * restaurant.taxRate;
-  const processingFee = subtotal * restaurant.processingFeeRate;
+  const discount = Math.min(subtotal, Math.max(0, discountAmount));
+  const discountedSubtotal = Math.max(0, subtotal - discount);
+  const tax = discountedSubtotal * restaurant.taxRate;
+  const processingFee = discountedSubtotal * restaurant.processingFeeRate;
   const safeTip = Math.max(0, tip);
   return {
     subtotal,
+    discount,
     tax,
     processingFee,
     tip: safeTip,
-    total: subtotal + tax + processingFee + safeTip
+    total: Math.max(0, discountedSubtotal + tax + processingFee + safeTip)
   };
 }

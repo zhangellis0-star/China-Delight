@@ -18,7 +18,8 @@ import {
   validateScheduledPickup
 } from "@/lib/order-rules";
 import { calculateCart, formatPrice } from "@/lib/pricing";
-import type { CheckoutCustomer } from "@/types";
+import { computePromoDiscount, normalizePromoCode } from "@/lib/promo";
+import type { AppliedPromo, CheckoutCustomer } from "@/types";
 
 type CheckoutFormCustomer = CheckoutCustomer;
 type TipChoice = "none" | "18" | "20" | "22" | "custom";
@@ -57,6 +58,12 @@ export default function CheckoutPage() {
   const [tipChoice, setTipChoice] = useState<TipChoice>("none");
   const [customTip, setCustomTip] = useState("");
   const baseSubtotal = calculateCart(items).subtotal;
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  // Recompute the discount against the live subtotal so it always matches what the server will charge.
+  const discountAmount = appliedPromo ? computePromoDiscount(baseSubtotal, appliedPromo.discountType, appliedPromo.discountValue) : 0;
   const parsedCustomTip = Number(customTip || 0);
   const tipAmount =
     tipChoice === "custom"
@@ -64,7 +71,7 @@ export default function CheckoutPage() {
       : tipChoice === "none"
         ? 0
         : baseSubtotal * (Number(tipChoice) / 100);
-  const totals = calculateCart(items, tipAmount);
+  const totals = calculateCart(items, tipAmount, discountAmount);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const orderingOpen = settings?.orderingAllowed ?? isRestaurantOpen();
   const [loading, setLoading] = useState(false);
@@ -89,8 +96,9 @@ export default function CheckoutPage() {
 
   const paymentLabel = "Pay in store / Pay at pickup";
   const hasLunchItem = items.some((item) => isLunchItem(item));
+  const allowAfterOnlineCutoff = settings?.orderingOverride?.mode === "open";
   const dateOptions = useMemo(() => getPickupDateOptions(new Date(), { hasLunchItem }), [hasLunchItem]);
-  const timeSlots = useMemo(() => (pickupDate ? getPickupTimeSlots(pickupDate, { hasLunchItem, now: new Date() }) : []), [pickupDate, hasLunchItem]);
+  const timeSlots = useMemo(() => (pickupDate ? getPickupTimeSlots(pickupDate, { hasLunchItem, now: new Date(), allowAfterOnlineCutoff }) : []), [pickupDate, allowAfterOnlineCutoff, hasLunchItem]);
   const pickupTimeLabel =
     customer.pickupTimeType === "scheduled"
       ? customer.scheduledPickupTime
@@ -99,10 +107,20 @@ export default function CheckoutPage() {
       : ASAP_PICKUP_NOTE;
 
   useEffect(() => {
-    fetch("/api/settings")
+    function loadSettings() {
+      fetch("/api/settings", { cache: "no-store" })
       .then((response) => response.json())
       .then((data: PublicSettings) => setSettings(data))
       .catch(() => undefined);
+    }
+
+    loadSettings();
+    window.addEventListener("focus", loadSettings);
+    document.addEventListener("visibilitychange", loadSettings);
+    return () => {
+      window.removeEventListener("focus", loadSettings);
+      document.removeEventListener("visibilitychange", loadSettings);
+    };
   }, []);
 
   function applySchedule(dateStr: string, timeStr: string) {
@@ -111,6 +129,38 @@ export default function CheckoutPage() {
     setScheduleError(null);
     const iso = dateStr && timeStr ? buildScheduledPickupISO(dateStr, timeStr) : "";
     setCustomer((previous) => ({ ...previous, scheduledPickupTime: iso }));
+  }
+
+  async function applyPromo() {
+    const code = normalizePromoCode(promoInput);
+    if (!code) {
+      setPromoError("Enter a promo code.");
+      return;
+    }
+    setPromoLoading(true);
+    setPromoError(null);
+    try {
+      const response = await fetch("/api/promo/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, subtotal: baseSubtotal })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "That promo code could not be applied.");
+      setAppliedPromo(data.promo as AppliedPromo);
+      setPromoInput("");
+    } catch (error) {
+      setAppliedPromo(null);
+      setPromoError(error instanceof Error ? error.message : "That promo code could not be applied.");
+    } finally {
+      setPromoLoading(false);
+    }
+  }
+
+  function clearPromo() {
+    setAppliedPromo(null);
+    setPromoError(null);
+    setPromoInput("");
   }
 
   function scrollToError(target: HTMLElement | null, focusTarget?: HTMLElement | null) {
@@ -141,7 +191,7 @@ export default function CheckoutPage() {
       return;
     }
     if (customer.pickupTimeType === "scheduled") {
-      const scheduleValidationError = validateScheduledPickup(pickupDate, pickupTime, { hasLunchItem, now: new Date() });
+      const scheduleValidationError = validateScheduledPickup(pickupDate, pickupTime, { hasLunchItem, now: new Date(), allowAfterOnlineCutoff });
       if (scheduleValidationError) {
         setScheduleError(scheduleValidationError);
         scrollToError(scheduleRef.current);
@@ -162,11 +212,17 @@ export default function CheckoutPage() {
     const response = await fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customer, items, totals })
+      body: JSON.stringify({ customer, items, totals, promoCode: appliedPromo?.code ?? null })
     });
     const data = await response.json();
     if (!response.ok) {
       setLoading(false);
+      if (data.promoInvalid) {
+        clearPromo();
+        setPromoError(data.error ?? "That promo code is no longer valid. Please review your total.");
+        scrollToError(paymentRef.current);
+        return;
+      }
       alert(data.error ?? "Could not place the order. Please call the restaurant.");
       return;
     }
@@ -176,7 +232,8 @@ export default function CheckoutPage() {
         supabaseError: data.supabaseError ?? null
       });
     }
-    window.localStorage.setItem("china-delight-last-order", JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items, totals, status: "new" }));
+    const storedTotals = { ...totals, promoCode: appliedPromo?.code ?? null };
+    window.localStorage.setItem("china-delight-last-order", JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items, totals: storedTotals, status: "new" }));
     clearCart();
     router.push(`/confirmation?order=${data.orderNumber}`);
   }
@@ -255,7 +312,7 @@ export default function CheckoutPage() {
             </label>
           </div>
 
-          <div ref={paymentRef} className="rounded-md border border-stone-200 bg-china-paper p-4">
+          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
             <p className="font-black">Pickup only</p>
             <p className="mt-2 leading-7 text-stone-700">Online orders through this website are pickup only.</p>
             {settings?.busyMode && settings.busyMode !== "normal" && (
@@ -296,7 +353,7 @@ export default function CheckoutPage() {
                     value={pickupDate}
                     onChange={(event) => {
                       const nextDate = event.target.value;
-                      const nextSlots = nextDate ? getPickupTimeSlots(nextDate, { hasLunchItem, now: new Date() }) : [];
+                      const nextSlots = nextDate ? getPickupTimeSlots(nextDate, { hasLunchItem, now: new Date(), allowAfterOnlineCutoff }) : [];
                       const keepTime = nextSlots.some((slot) => slot.value === pickupTime) ? pickupTime : "";
                       applySchedule(nextDate, keepTime);
                     }}
@@ -340,6 +397,60 @@ export default function CheckoutPage() {
               </div>
             )}
             <p className="mt-3 text-sm font-bold text-stone-700">{ASAP_PICKUP_NOTE}</p>
+          </div>
+
+          <div ref={paymentRef} className="rounded-md border border-stone-200 bg-china-paper p-4">
+            <div className="flex items-center gap-2 font-black">
+              <WalletCards className="h-5 w-5 text-china-red" />
+              Payment
+            </div>
+            <div className="mt-3 rounded-md border border-china-red bg-red-50 p-3 font-black text-china-red">
+              Pay in store / Pay at pickup
+            </div>
+            <p className="mt-2 text-sm leading-6 text-stone-700">Payment is collected in store at pickup.</p>
+            {paymentError && <p role="alert" className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{paymentError}</p>}
+          </div>
+
+          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+            <p className="font-black">Promo code</p>
+            <p className="mt-1 text-sm leading-6 text-stone-700">Have a promo or store-credit code? Apply it before placing your order.</p>
+            {appliedPromo ? (
+              <div className="mt-3 flex flex-col gap-2 rounded-md border border-green-300 bg-green-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-black text-green-800">{appliedPromo.code} applied</p>
+                  {appliedPromo.description && <p className="text-sm font-bold text-green-800">{appliedPromo.description}</p>}
+                  <p className="text-sm font-bold text-green-800">You save {formatPrice(discountAmount)}</p>
+                </div>
+                <button type="button" onClick={clearPromo} className="focus-ring min-h-11 rounded-md border border-green-700 bg-white px-4 font-black text-green-800">
+                  Remove code
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={promoInput}
+                  onChange={(event) => setPromoInput(event.target.value.toUpperCase())}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applyPromo();
+                    }
+                  }}
+                  placeholder="Enter code"
+                  aria-label="Promo code"
+                  className="focus-ring h-12 flex-1 rounded-md border border-stone-300 px-3 font-bold uppercase"
+                />
+                <button
+                  type="button"
+                  onClick={applyPromo}
+                  disabled={promoLoading || !promoInput.trim()}
+                  className="focus-ring min-h-12 rounded-md bg-china-red px-5 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400"
+                >
+                  {promoLoading ? "Applying..." : "Apply"}
+                </button>
+              </div>
+            )}
+            {promoError && <p role="alert" className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{promoError}</p>}
           </div>
 
           <div className="rounded-md border border-stone-200 bg-china-paper p-4">
@@ -386,18 +497,6 @@ export default function CheckoutPage() {
             Order notes
             <textarea value={customer.notes} onChange={(event) => setCustomer({ ...customer, notes: event.target.value })} className="focus-ring min-h-24 rounded-md border border-stone-300 p-3" placeholder="Pickup notes, allergy notes, special instructions..." />
           </label>
-
-          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
-            <div className="flex items-center gap-2 font-black">
-              <WalletCards className="h-5 w-5 text-china-red" />
-              Payment
-            </div>
-            <div className="mt-3 rounded-md border border-china-red bg-red-50 p-3 font-black text-china-red">
-              Pay in store / Pay at pickup
-            </div>
-            <p className="mt-2 text-sm leading-6 text-stone-700">Payment is collected in store at pickup.</p>
-            {paymentError && <p role="alert" className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{paymentError}</p>}
-          </div>
         </div>
 
         <aside className="h-fit rounded-lg border border-stone-200 bg-white p-5 shadow-warm">
@@ -457,6 +556,12 @@ export default function CheckoutPage() {
               <span>Subtotal</span>
               <span>{formatPrice(totals.subtotal)}</span>
             </div>
+            {totals.discount > 0 && (
+              <div className="flex justify-between text-china-red">
+                <span>Promo discount{appliedPromo ? ` (${appliedPromo.code})` : ""}</span>
+                <span>-{formatPrice(totals.discount)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span>Tax</span>
               <span>{formatPrice(totals.tax)}</span>

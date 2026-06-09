@@ -14,6 +14,8 @@ type LookupOrder = {
   pickupTimeType?: PickupTimeType;
   scheduledPickupTime?: string | null;
   estimatedReady?: string | null;
+  promoCode?: string | null;
+  discountAmount?: number | null;
   total?: number;
 };
 
@@ -95,6 +97,11 @@ export default function OrderStatusPage() {
             <p>
               <strong>Payment:</strong> {order.paymentMethod === "stripe" ? `Stripe / ${order.paymentStatus ?? "unpaid"}` : "Pay in store / Pay at pickup"}
             </p>
+            {Number(order.discountAmount ?? 0) > 0 && (
+              <p className="text-china-red">
+                <strong>Promo discount{order.promoCode ? ` (${order.promoCode})` : ""}:</strong> -{formatPrice(Number(order.discountAmount))}
+              </p>
+            )}
             {typeof order.total === "number" && (
               <p>
                 <strong>Total:</strong> {formatPrice(order.total)}

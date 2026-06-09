@@ -12,5 +12,9 @@ export async function GET() {
     busyExtraMinutes: busyExtraMinutes(settings.busyMode),
     soldOutItemIds: settings.soldOutItemIds,
     nextBoundary: nextStoreBoundary()
+  }, {
+    headers: {
+      "Cache-Control": "no-store, max-age=0"
+    }
   });
 }

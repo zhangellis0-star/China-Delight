@@ -54,7 +54,7 @@ const rawMenuItems: MenuItem[] = [
   { id: "fried-chicken-wings-app", number: "11", name: "Fried Chicken Wings", category: "Appetizers", prices: { order: 7.25 }, options: regularOptions },
   { id: "dumplings", number: "15", name: "Dumpling, Pan Fried or Steamed (8)", category: "Appetizers", prices: { order: 8.95 }, options: regularOptions },
   { id: "vegetable-dumplings", number: "15a", name: "Vegetable Dumpling, Pan Fried or Steamed (8)", category: "Appetizers", prices: { order: 8.95 }, options: regularOptions },
-  { id: "pu-pu-platter", number: "16", name: "Pu Pu Platter", category: "Appetizers", prices: { order: 16.25 }, description: "Egg roll, crab rangoon, golden finger, fantail shrimp, fried wonton, chicken wing, teriyaki beef, fried wonton.", options: regularOptions },
+  { id: "pu-pu-platter", number: "16", name: "Pu Pu Platter", category: "Appetizers", prices: { order: 16.25 }, description: "Egg roll(2), crab rangoon(2), golden finger(6), fantail shrimp(2), fried wonton(6), BBQ spare ribs(2), teriyaki beef(2).", options: regularOptions },
   { id: "mini-pu-pu-platter", number: "16a", name: "Mini Pu Pu Platter", category: "Appetizers", prices: { order: 15.25 }, options: regularOptions },
   { id: "cold-sesame-noodles", number: "17", name: "Cold Sesame Noodles", category: "Appetizers", spicy: true, prices: { order: 8.50 }, options: regularOptions },
   { id: "steamed-wonton-sesame", number: "17a", name: "Steamed Wonton in Sesame Peanut Sauce", category: "Appetizers", prices: { order: 8.50 }, options: regularOptions },

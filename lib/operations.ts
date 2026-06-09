@@ -1,4 +1,4 @@
-import { isRestaurantOpen } from "@/lib/order-rules";
+import { isRestaurantOpen, isStoreOpen } from "@/lib/order-rules";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 export type OrderingOverrideMode = "normal" | "open" | "paused";
@@ -22,6 +22,11 @@ function storeWindow(day: number) {
   if (day === 0) return { open: minutes(12, 0), close: minutes(22, 0) };
   if (day === 5 || day === 6) return { open: minutes(11, 0), close: minutes(22, 30) };
   return { open: minutes(11, 0), close: minutes(22, 0) };
+}
+
+function onlineOrderingWindow(day: number) {
+  const window = storeWindow(day);
+  return { ...window, close: day === 0 ? minutes(20, 15) : minutes(21, 0) };
 }
 
 function easternParts(date = new Date()) {
@@ -87,15 +92,19 @@ export function easternDateKey(date = new Date()) {
 export function nextStoreBoundary(date = new Date()) {
   const parts = easternParts(date);
   const nowMinutes = minutes(parts.hour, parts.minute);
-  const todayWindow = storeWindow(parts.day);
+  const todayWindow = onlineOrderingWindow(parts.day);
+  const todayStoreWindow = storeWindow(parts.day);
   if (nowMinutes < todayWindow.open) {
     return { label: `today at ${formatBoundaryTime(todayWindow.open)}`, iso: easternWallTimeToISO(parts.year, parts.month, parts.dayOfMonth, todayWindow.open) };
   }
   if (nowMinutes < todayWindow.close) {
     return { label: `today at ${formatBoundaryTime(todayWindow.close)}`, iso: easternWallTimeToISO(parts.year, parts.month, parts.dayOfMonth, todayWindow.close) };
   }
+  if (nowMinutes < todayStoreWindow.close) {
+    return { label: `today at ${formatBoundaryTime(todayStoreWindow.close)}`, iso: easternWallTimeToISO(parts.year, parts.month, parts.dayOfMonth, todayStoreWindow.close) };
+  }
   const next = addDays(parts.year, parts.month, parts.dayOfMonth, 1);
-  const nextWindow = storeWindow(next.day);
+  const nextWindow = onlineOrderingWindow(next.day);
   return { label: `${dayNames[next.day]} at ${formatBoundaryTime(nextWindow.open)}`, iso: easternWallTimeToISO(next.year, next.month, next.dayOfMonth, nextWindow.open) };
 }
 
@@ -159,7 +168,7 @@ export async function saveOperationalSettings(settings: OperationalSettings) {
 }
 
 export function orderingAllowed(settings: OperationalSettings, date = new Date()) {
-  if (settings.orderingOverride.mode === "open") return true;
+  if (settings.orderingOverride.mode === "open") return isStoreOpen(date);
   if (settings.orderingOverride.mode === "paused") return false;
   return isRestaurantOpen(date);
 }

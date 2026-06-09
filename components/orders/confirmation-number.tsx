@@ -13,7 +13,7 @@ type LastOrder = {
   orderNumber: string;
   customer: CheckoutCustomer;
   items: CartItem[];
-  totals: { subtotal: number; tax: number; processingFee?: number; tip?: number; total: number };
+  totals: { subtotal: number; discount?: number; tax: number; processingFee?: number; tip?: number; total: number; promoCode?: string | null };
 };
 
 type SupabaseConfirmationOrder = {
@@ -32,6 +32,8 @@ type SupabaseConfirmationOrder = {
   tax: number;
   processing_fee?: number | null;
   tip_amount?: number | null;
+  promo_code?: string | null;
+  discount_amount?: number | null;
   total: number;
   order_items: Array<{
     item_number: string;
@@ -126,6 +128,9 @@ export function ConfirmationNumber() {
           </div>
           <div className="grid gap-1 border-t border-stone-200 pt-3 text-right">
             <p>Subtotal: {formatPrice(supabaseOrder.subtotal)}</p>
+            {Number(supabaseOrder.discount_amount ?? 0) > 0 && (
+              <p className="text-china-red">Promo discount{supabaseOrder.promo_code ? ` (${supabaseOrder.promo_code})` : ""}: -{formatPrice(Number(supabaseOrder.discount_amount))}</p>
+            )}
             <p>Tax: {formatPrice(supabaseOrder.tax)}</p>
             <p>Processing fee: {formatPrice(supabaseOrder.processing_fee ?? 0)}</p>
             <p>Tip: {formatPrice(supabaseOrder.tip_amount ?? 0)}</p>
@@ -169,6 +174,9 @@ export function ConfirmationNumber() {
           </div>
           <div className="grid gap-1 border-t border-stone-200 pt-3 text-right">
             <p>Subtotal: {formatPrice(lastOrder.totals.subtotal)}</p>
+            {Number(lastOrder.totals.discount ?? 0) > 0 && (
+              <p className="text-china-red">Promo discount{lastOrder.totals.promoCode ? ` (${lastOrder.totals.promoCode})` : ""}: -{formatPrice(Number(lastOrder.totals.discount))}</p>
+            )}
             <p>Tax: {formatPrice(lastOrder.totals.tax)}</p>
             <p>Processing fee: {formatPrice(lastOrder.totals.processingFee ?? 0)}</p>
             <p>Tip: {formatPrice(lastOrder.totals.tip ?? 0)}</p>

@@ -5,6 +5,8 @@ export function customizationParts(customization?: Partial<CartCustomization> | 
   if (!customization) return [];
   const includedItems = Array.isArray(customization.includedItems) ? customization.includedItems : [];
   const addOns = Array.isArray(customization.addOns) ? customization.addOns : [];
+  const extraChargeAmount = Number((customization as { extraChargeAmount?: unknown }).extraChargeAmount ?? 0);
+  const extraChargeLabel = typeof customization.extraChargeLabel === "string" ? customization.extraChargeLabel : "";
 
   return [
     customization.size ? `Size: ${customization.size}` : "",
@@ -16,7 +18,8 @@ export function customizationParts(customization?: Partial<CartCustomization> | 
     customization.sauceOnSide ? "Sauce on side" : "",
     customization.noOnion ? "No onion" : "",
     customization.noBroccoli ? "No broccoli" : "",
-    addOns.length ? `Add-ons: ${addOns.join(", ")}` : ""
+    addOns.length ? `Add-ons: ${addOns.join(", ")}` : "",
+    extraChargeLabel || extraChargeAmount > 0 ? `${extraChargeLabel || "Extra charge"} (+$${extraChargeAmount.toFixed(2)})` : ""
   ].filter(Boolean) as string[];
 }
 

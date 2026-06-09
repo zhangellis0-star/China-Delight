@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase
     .from("orders")
-    .select("order_number, customer_phone, status, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, estimated_ready_minutes, estimated_ready_at, total, order_items(quantity)")
+    .select("order_number, customer_phone, status, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, estimated_ready_minutes, estimated_ready_at, promo_code, discount_amount, total, order_items(quantity)")
     .eq("order_number", orderNumber)
     .single();
 
@@ -39,6 +39,8 @@ export async function POST(request: Request) {
       pickupTimeType: data.pickup_time_type,
       scheduledPickupTime: data.scheduled_pickup_time,
       estimatedReady: confirmedReadyTime(data.estimated_ready_at),
+      promoCode: data.promo_code,
+      discountAmount: data.discount_amount,
       total: data.total
     }
   });

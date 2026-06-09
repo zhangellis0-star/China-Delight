@@ -39,6 +39,11 @@ function storeWindow(day: number) {
   return { open: minutes(11, 0), close: minutes(22, 0) };
 }
 
+function onlineOrderingWindow(day: number) {
+  const window = storeWindow(day);
+  return { ...window, close: day === 0 ? minutes(20, 15) : minutes(21, 0) };
+}
+
 function formatTime(totalMinutes: number) {
   const hour24 = Math.floor(totalMinutes / 60);
   const minute = totalMinutes % 60;
@@ -50,6 +55,13 @@ function formatTime(totalMinutes: number) {
 export function isRestaurantOpen(date = new Date()) {
   const parts = easternParts(date);
   const now = minutes(parts.hour, parts.minute);
+  const window = onlineOrderingWindow(parts.day);
+  return now >= window.open && now < window.close;
+}
+
+export function isStoreOpen(date = new Date()) {
+  const parts = easternParts(date);
+  const now = minutes(parts.hour, parts.minute);
   const window = storeWindow(parts.day);
   return now >= window.open && now < window.close;
 }
@@ -57,11 +69,11 @@ export function isRestaurantOpen(date = new Date()) {
 export function nextOpeningLabel(date = new Date()) {
   const parts = easternParts(date);
   const now = minutes(parts.hour, parts.minute);
-  const today = storeWindow(parts.day);
+  const today = onlineOrderingWindow(parts.day);
   if (now < today.open) return `Online ordering opens today at ${formatTime(today.open)}.`;
 
   const nextDay = (parts.day + 1) % 7;
-  const next = storeWindow(nextDay);
+  const next = onlineOrderingWindow(nextDay);
   return `Online ordering opens ${dayNames[nextDay]} at ${formatTime(next.open)}.`;
 }
 
@@ -133,12 +145,6 @@ function easternNowParts(date = new Date()) {
   return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
 }
 
-// Store window (open/close minutes) for the weekday of a given Y-M-D date string.
-function storeWindowForDateStr(dateStr: string) {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  return storeWindow(weekdayForYmd(year, month, day));
-}
-
 // Allowed pickup dates: today (ET) through the end of next month. Lunch orders exclude Sundays.
 export function getPickupDateOptions(now = new Date(), opts: { hasLunchItem?: boolean } = {}): PickupOption[] {
   const today = easternNowParts(now);
@@ -167,7 +173,7 @@ export function getPickupDateOptions(now = new Date(), opts: { hasLunchItem?: bo
 }
 
 // 15-minute pickup slots within store hours for a date, honoring lunch window and same-day cutoff.
-export function getPickupTimeSlots(dateStr: string, opts: { hasLunchItem?: boolean; now?: Date } = {}) {
+export function getPickupTimeSlots(dateStr: string, opts: { hasLunchItem?: boolean; now?: Date; allowAfterOnlineCutoff?: boolean } = {}) {
   if (!dateStr) return [] as Array<{ value: string; label: string }>;
   const [year, month, day] = dateStr.split("-").map(Number);
   const weekday = weekdayForYmd(year, month, day);
@@ -175,7 +181,7 @@ export function getPickupTimeSlots(dateStr: string, opts: { hasLunchItem?: boole
   // Lunch specials: Monday–Saturday only.
   if (opts.hasLunchItem && weekday === 0) return [];
 
-  const window = storeWindow(weekday);
+  const window = opts.allowAfterOnlineCutoff ? storeWindow(weekday) : onlineOrderingWindow(weekday);
   let open = window.open;
   let close = window.close;
   if (opts.hasLunchItem) {
@@ -200,7 +206,7 @@ export function getPickupTimeSlots(dateStr: string, opts: { hasLunchItem?: boole
 }
 
 // Returns an error message if the scheduled date/time is missing or invalid, else null.
-export function validateScheduledPickup(dateStr: string, timeStr: string, opts: { hasLunchItem?: boolean; now?: Date } = {}) {
+export function validateScheduledPickup(dateStr: string, timeStr: string, opts: { hasLunchItem?: boolean; now?: Date; allowAfterOnlineCutoff?: boolean } = {}) {
   if (!dateStr) return "Please choose a pickup date.";
   if (!timeStr) return "Please choose a pickup time.";
   const allowed = getPickupDateOptions(opts.now ?? new Date(), { hasLunchItem: opts.hasLunchItem }).some((option) => option.value === dateStr);
@@ -213,6 +219,25 @@ export function validateScheduledPickup(dateStr: string, timeStr: string, opts: 
     return opts.hasLunchItem ? "Lunch specials are only available 11:00 AM-3:00 PM. Please choose a valid time." : "Please choose a valid pickup time during store hours.";
   }
   return null;
+}
+
+export function validateScheduledPickupISO(value: string, opts: { hasLunchItem?: boolean; now?: Date; allowAfterOnlineCutoff?: boolean } = {}) {
+  if (!value) return "Please choose a scheduled pickup time.";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Please choose a valid pickup time.";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  const dateStr = `${get("year")}-${get("month")}-${get("day")}`;
+  const timeStr = `${get("hour")}:${get("minute")}`;
+  return validateScheduledPickup(dateStr, timeStr, opts);
 }
 
 // America/New_York offset (ms) at a given instant.
