@@ -300,7 +300,9 @@ export async function POST(request: Request) {
       {
         error:
           printerTarget === "epson_tcp"
-            ? "Printer did not respond. Check power, paper, and network connection."
+            ? error instanceof Error
+              ? `Epson TCP ${printerHost}:${printerPort} failed: ${error.message}`
+              : `Epson TCP ${printerHost}:${printerPort} failed with an unknown error.`
             : error instanceof Error
               ? error.message
               : "Windows printer did not respond."

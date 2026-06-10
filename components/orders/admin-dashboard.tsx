@@ -73,8 +73,26 @@ type KitchenPrintState = {
   status: "printed" | "failed";
   message?: string;
   updatedAt: string;
+  debug?: {
+    printerMode: string;
+    printerIp?: string;
+    endpointUrl?: string;
+    httpStatus?: number | null;
+    responseText?: string;
+    networkError?: string;
+    blocked?: boolean;
+  };
 };
 type KitchenPrinterTarget = "epson_epos" | "epson_tcp" | "receipt" | "bar" | "packer" | "sushi";
+class EposPrintError extends Error {
+  debug: NonNullable<KitchenPrintState["debug"]>;
+
+  constructor(message: string, debug: NonNullable<KitchenPrintState["debug"]>) {
+    super(message);
+    this.name = "EposPrintError";
+    this.debug = debug;
+  }
+}
 type EditOrderState = {
   orderNumber: string;
   customerName: string;
@@ -135,6 +153,7 @@ const kitchenPrintStorageKey = "china-delight-kitchen-print-statuses";
 const kitchenPrinterTargetStorageKey = "china-delight-kitchen-printer-target";
 const epsonEposIpStorageKey = "china-delight-epson-epos-ip";
 const defaultEpsonEposIp = process.env.NEXT_PUBLIC_EPSON_EPOS_IP || "192.168.1.78";
+const printerDebugBuildMarker = "Printer debug build active";
 const kitchenPrinterTargets: Array<{ value: KitchenPrinterTarget; label: string; description: string }> = [
   { value: "epson_epos", label: "Epson ePOS TM-m30III", description: "iPad/Safari direct to 192.168.1.78" },
   { value: "receipt", label: "Windows receipt", description: "Honor POS installed printer" },
@@ -365,6 +384,15 @@ async function sendEposPrint(order: AdminOrder, ipAddress: string) {
   const ip = ipAddress.trim();
   if (!ip) throw new Error("Enter the Epson ePOS printer IP address.");
   const url = `http://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+  const baseDebug = {
+    printerMode: "epson_epos",
+    printerIp: ip,
+    endpointUrl: url,
+    httpStatus: null,
+    responseText: "",
+    networkError: "",
+    blocked: false
+  };
   const payload = eposXml(order);
   console.info("[epos-print] Sending kitchen ticket", {
     url,
@@ -381,14 +409,18 @@ async function sendEposPrint(order: AdminOrder, ipAddress: string) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown network error";
+    const blocked = /failed to fetch|load failed|networkerror|cors|mixed content|blocked/i.test(message);
     console.error("[epos-print] Network error", {
       url,
       orderNumber: order.order_number,
-      message
+      message,
+      blocked
     });
-    throw new Error(
-      `Epson ePOS network error for ${url}: ${message}. If Safari shows this on HTTPS, open admin over local HTTP or allow the printer endpoint.`
-    );
+    throw new EposPrintError(`Epson ePOS network error: ${message}`, {
+      ...baseDebug,
+      networkError: message,
+      blocked
+    });
   }
 
   const responseText = await response.text().catch((error) => {
@@ -411,10 +443,18 @@ async function sendEposPrint(order: AdminOrder, ipAddress: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`Epson ePOS HTTP ${response.status} ${response.statusText}: ${responseText || "No response body"}`);
+    throw new EposPrintError(`Epson ePOS HTTP ${response.status} ${response.statusText}`, {
+      ...baseDebug,
+      httpStatus: response.status,
+      responseText: responseText || "No response body"
+    });
   }
   if (/success=["']false["']/i.test(responseText)) {
-    throw new Error(`Epson ePOS rejected the print job: ${responseText.slice(0, 500)}`);
+    throw new EposPrintError("Epson ePOS rejected the print job.", {
+      ...baseDebug,
+      httpStatus: response.status,
+      responseText: responseText.slice(0, 1000)
+    });
   }
   if (!/success=["']true["']/i.test(responseText)) {
     console.warn("[epos-print] Response did not include success=true", {
@@ -935,18 +975,43 @@ export function AdminDashboard() {
           body: JSON.stringify({ orderNumber, printerTarget: kitchenPrinterTarget })
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Printer did not respond.");
+        if (!response.ok) throw new Error(data.error || `Server fallback print failed for ${kitchenPrinterTarget}.`);
       }
       saveKitchenPrintState(orderNumber, {
         status: "printed",
         message: kitchenPrinterTarget === "epson_epos" ? `Printed by ePOS ${epsonEposIp}` : `Printed by ${kitchenPrinterTarget}`,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        debug:
+          kitchenPrinterTarget === "epson_epos"
+            ? {
+                printerMode: "epson_epos",
+                printerIp: epsonEposIp.trim(),
+                endpointUrl: `http://${epsonEposIp.trim()}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`,
+                httpStatus: 200,
+                responseText: "Printed successfully",
+                networkError: "",
+                blocked: false
+              }
+            : { printerMode: kitchenPrinterTarget }
       });
     } catch (error) {
+      const debug =
+        error instanceof EposPrintError
+          ? error.debug
+          : {
+              printerMode: kitchenPrinterTarget,
+              printerIp: kitchenPrinterTarget === "epson_epos" ? epsonEposIp.trim() : undefined,
+              endpointUrl: kitchenPrinterTarget === "epson_epos" ? `http://${epsonEposIp.trim()}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000` : undefined,
+              httpStatus: null,
+              responseText: "",
+              networkError: error instanceof Error ? error.message : "Unknown print error",
+              blocked: false
+            };
       saveKitchenPrintState(orderNumber, {
         status: "failed",
-        message: error instanceof Error ? error.message : "Printer did not respond.",
-        updatedAt: new Date().toISOString()
+        message: error instanceof Error ? error.message : "Unknown print error.",
+        updatedAt: new Date().toISOString(),
+        debug
       });
     } finally {
       setNetworkPrintingOrders((current) => {
@@ -1232,6 +1297,7 @@ export function AdminDashboard() {
         {refreshError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{refreshError}</span>}
         {operationsError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{operationsError}</span>}
         {audioBlocked && !muted && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">Browser blocked sound. Click Enable sound once to allow alerts.</span>}
+        <span className="rounded-md bg-green-100 px-3 py-2 text-green-900">{printerDebugBuildMarker}</span>
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -1499,9 +1565,19 @@ export function AdminDashboard() {
                   <p className="rounded-md bg-green-100 px-2 py-1 text-xs font-black uppercase text-green-800">Printed</p>
                 )}
                 {printState?.status === "failed" && (
-                  <p className="whitespace-pre-wrap break-words rounded-md bg-amber-100 px-2 py-1 text-xs font-bold text-amber-950">
-                    Printer Offline / Failed: {printState.message ?? "Printer did not respond."}
-                  </p>
+                  <div className="grid gap-2 rounded-md bg-amber-100 px-2 py-2 text-xs font-bold text-amber-950">
+                    <p className="whitespace-pre-wrap break-words">Printer Offline / Failed: {printState.message ?? "Unknown print error."}</p>
+                    <div className="grid gap-1 rounded-md border border-amber-300 bg-white/70 p-2 font-mono text-[11px] normal-case text-stone-900">
+                      <p className="font-black text-amber-950">ePOS debug</p>
+                      <p>printer mode: {printState.debug?.printerMode ?? kitchenPrinterTarget}</p>
+                      <p>printer IP: {printState.debug?.printerIp ?? (kitchenPrinterTarget === "epson_epos" ? epsonEposIp : "n/a")}</p>
+                      <p className="break-all">endpoint URL: {printState.debug?.endpointUrl ?? "n/a"}</p>
+                      <p>HTTP status: {printState.debug?.httpStatus ?? "n/a"}</p>
+                      <p>request blocked: {printState.debug?.blocked ? "yes" : "no"}</p>
+                      <p className="whitespace-pre-wrap break-words">fetch/network error: {printState.debug?.networkError || "none"}</p>
+                      <p className="whitespace-pre-wrap break-words">response text: {printState.debug?.responseText || "none"}</p>
+                    </div>
+                  </div>
                 )}
                 <div className="grid grid-cols-4 gap-2">
                   {activeStatuses.includes(order.status) ? (
