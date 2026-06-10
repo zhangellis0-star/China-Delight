@@ -84,6 +84,7 @@ type KitchenPrintState = {
   };
 };
 type KitchenPrinterTarget = "epson_epos" | "epson_tcp" | "receipt" | "bar" | "packer" | "sushi";
+type EposProtocol = "http" | "https";
 class EposPrintError extends Error {
   debug: NonNullable<KitchenPrintState["debug"]>;
 
@@ -152,7 +153,9 @@ const acceptReadyMinuteOptions = [5, 15, 25];
 const kitchenPrintStorageKey = "china-delight-kitchen-print-statuses";
 const kitchenPrinterTargetStorageKey = "china-delight-kitchen-printer-target";
 const epsonEposIpStorageKey = "china-delight-epson-epos-ip";
+const epsonEposProtocolStorageKey = "china-delight-epson-epos-protocol";
 const defaultEpsonEposIp = process.env.NEXT_PUBLIC_EPSON_EPOS_IP || "192.168.1.78";
+const defaultEpsonEposProtocol = (process.env.NEXT_PUBLIC_EPSON_EPOS_PROTOCOL === "http" ? "http" : "https") as EposProtocol;
 const printerDebugBuildMarker = "Printer debug build active";
 const kitchenPrinterTargets: Array<{ value: KitchenPrinterTarget; label: string; description: string }> = [
   { value: "epson_epos", label: "Epson ePOS TM-m30III", description: "iPad/Safari direct to 192.168.1.78" },
@@ -264,6 +267,12 @@ function loadKitchenPrinterTarget() {
 function loadEpsonEposIp() {
   if (typeof window === "undefined") return defaultEpsonEposIp;
   return window.localStorage.getItem(epsonEposIpStorageKey)?.trim() || defaultEpsonEposIp;
+}
+
+function loadEpsonEposProtocol() {
+  if (typeof window === "undefined") return defaultEpsonEposProtocol;
+  const saved = window.localStorage.getItem(epsonEposProtocolStorageKey);
+  return saved === "http" || saved === "https" ? saved : defaultEpsonEposProtocol;
 }
 
 function xmlEscape(value: string) {
@@ -380,10 +389,10 @@ function eposXml(order: AdminOrder) {
 </s:Envelope>`;
 }
 
-async function sendEposPrint(order: AdminOrder, ipAddress: string) {
+async function sendEposPrint(order: AdminOrder, ipAddress: string, protocol: EposProtocol) {
   const ip = ipAddress.trim();
   if (!ip) throw new Error("Enter the Epson ePOS printer IP address.");
-  const url = `http://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+  const url = `${protocol}://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
   const baseDebug = {
     printerMode: "epson_epos",
     printerIp: ip,
@@ -590,6 +599,7 @@ export function AdminDashboard() {
   const [printStatusLoaded, setPrintStatusLoaded] = useState(false);
   const [kitchenPrinterTarget, setKitchenPrinterTarget] = useState<KitchenPrinterTarget>("epson_epos");
   const [epsonEposIp, setEpsonEposIp] = useState(defaultEpsonEposIp);
+  const [epsonEposProtocol, setEpsonEposProtocol] = useState<EposProtocol>(defaultEpsonEposProtocol);
   const [addItemSearch, setAddItemSearch] = useState("");
   const [newItemDraft, setNewItemDraft] = useState<NewItemDraft | null>(null);
   const previousNewOrders = useRef<Set<string>>(new Set());
@@ -615,6 +625,7 @@ export function AdminDashboard() {
     seenNewOrdersRef.current = loadSeenNewOrders();
     setKitchenPrinterTarget(loadKitchenPrinterTarget());
     setEpsonEposIp(loadEpsonEposIp());
+    setEpsonEposProtocol(loadEpsonEposProtocol());
   }, []);
 
   useEffect(() => {
@@ -624,6 +635,10 @@ export function AdminDashboard() {
   useEffect(() => {
     window.localStorage.setItem(epsonEposIpStorageKey, epsonEposIp.trim() || defaultEpsonEposIp);
   }, [epsonEposIp]);
+
+  useEffect(() => {
+    window.localStorage.setItem(epsonEposProtocolStorageKey, epsonEposProtocol);
+  }, [epsonEposProtocol]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("china-delight-admin-sound");
@@ -967,7 +982,7 @@ export function AdminDashboard() {
     setNetworkPrintingOrders((current) => new Set(current).add(orderNumber));
     try {
       if (kitchenPrinterTarget === "epson_epos") {
-        await sendEposPrint(order, epsonEposIp);
+        await sendEposPrint(order, epsonEposIp, epsonEposProtocol);
       } else {
         const response = await fetch("/api/admin/print-ticket", {
           method: "POST",
@@ -986,7 +1001,7 @@ export function AdminDashboard() {
             ? {
                 printerMode: "epson_epos",
                 printerIp: epsonEposIp.trim(),
-                endpointUrl: `http://${epsonEposIp.trim()}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`,
+                endpointUrl: `${epsonEposProtocol}://${epsonEposIp.trim()}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`,
                 httpStatus: 200,
                 responseText: "Printed successfully",
                 networkError: "",
@@ -1001,7 +1016,7 @@ export function AdminDashboard() {
           : {
               printerMode: kitchenPrinterTarget,
               printerIp: kitchenPrinterTarget === "epson_epos" ? epsonEposIp.trim() : undefined,
-              endpointUrl: kitchenPrinterTarget === "epson_epos" ? `http://${epsonEposIp.trim()}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000` : undefined,
+              endpointUrl: kitchenPrinterTarget === "epson_epos" ? `${epsonEposProtocol}://${epsonEposIp.trim()}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000` : undefined,
               httpStatus: null,
               responseText: "",
               networkError: error instanceof Error ? error.message : "Unknown print error",
@@ -1020,7 +1035,7 @@ export function AdminDashboard() {
         return next;
       });
     }
-  }, [epsonEposIp, kitchenPrinterTarget, saveKitchenPrintState]);
+  }, [epsonEposIp, epsonEposProtocol, kitchenPrinterTarget, saveKitchenPrintState]);
 
   useEffect(() => {
     if (!printStatusLoaded) return;
@@ -1401,7 +1416,7 @@ export function AdminDashboard() {
           <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, order number, or item" className="focus-ring h-14 w-full rounded-md border border-china-gold/70 bg-white pl-12 pr-4 text-lg" />
         </label>
-        <div className="grid gap-3 rounded-lg border border-china-gold/60 bg-white p-3 md:grid-cols-[1.2fr_1fr]">
+        <div className="grid gap-3 rounded-lg border border-china-gold/60 bg-white p-3 md:grid-cols-[1.2fr_0.8fr_1fr]">
           <div>
             <label className="text-xs font-black uppercase tracking-[0.12em] text-china-red">Kitchen printer</label>
             <select
@@ -1420,6 +1435,19 @@ export function AdminDashboard() {
             </p>
           </div>
           <div>
+            <label className="text-xs font-black uppercase tracking-[0.12em] text-china-red">ePOS protocol</label>
+            <select
+              value={epsonEposProtocol}
+              onChange={(event) => setEpsonEposProtocol(event.target.value as EposProtocol)}
+              disabled={kitchenPrinterTarget !== "epson_epos"}
+              className="focus-ring mt-1 h-12 w-full rounded-md border border-china-gold/70 bg-white px-3 text-base font-bold disabled:bg-stone-100 disabled:text-stone-500"
+            >
+              <option value="https">HTTPS</option>
+              <option value="http">HTTP</option>
+            </select>
+            <p className="mt-1 text-xs font-bold text-stone-600">Use HTTPS from deployed admin. HTTP is for local HTTP testing.</p>
+          </div>
+          <div>
             <label className="text-xs font-black uppercase tracking-[0.12em] text-china-red">Epson ePOS IP</label>
             <input
               value={epsonEposIp}
@@ -1429,6 +1457,9 @@ export function AdminDashboard() {
               placeholder="192.168.1.78"
             />
             <p className="mt-1 text-xs font-bold text-stone-600">ePOS prints directly from this admin browser on restaurant Wi-Fi.</p>
+            <Link href="/admin/printer-test" className="mt-2 inline-flex text-xs font-black text-china-red underline">
+              Open printer endpoint test
+            </Link>
           </div>
         </div>
       </div>
