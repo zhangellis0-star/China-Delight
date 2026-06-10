@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { isDebugRouteAllowed } from "@/lib/debug-auth";
 import { getSupabaseAdmin, getSupabaseConfig, getSupabaseEnvStatus } from "@/lib/supabase-server";
+
+export const dynamic = "force-dynamic";
 
 function safeError(error: { message: string; details?: string; hint?: string; code?: string } | null) {
   if (!error) return null;
@@ -12,6 +15,9 @@ function safeError(error: { message: string; details?: string; hint?: string; co
 }
 
 export async function GET() {
+  if (!isDebugRouteAllowed()) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
   const config = getSupabaseConfig();
   const supabase = getSupabaseAdmin();
   const result = {
@@ -37,6 +43,9 @@ export async function GET() {
 }
 
 export async function POST() {
+  if (!isDebugRouteAllowed()) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
   const config = getSupabaseConfig();
   const supabase = getSupabaseAdmin();
   const orderNumber = `DEBUG-${Date.now()}`;

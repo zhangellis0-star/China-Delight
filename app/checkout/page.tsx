@@ -226,12 +226,6 @@ export default function CheckoutPage() {
       alert(data.error ?? "Could not place the order. Please call the restaurant.");
       return;
     }
-    if (!data.supabaseSaved) {
-      console.warn("[checkout] Order confirmation is using localStorage fallback", {
-        orderNumber: data.orderNumber,
-        supabaseError: data.supabaseError ?? null
-      });
-    }
     const storedTotals = { ...totals, promoCode: appliedPromo?.code ?? null };
     window.localStorage.setItem("china-delight-last-order", JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items, totals: storedTotals, status: "new" }));
     clearCart();

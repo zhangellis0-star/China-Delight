@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
+import { menuItems } from "@/data/menu";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { closedOrderingMessage, isLunchAvailable, isLunchItem, lunchAvailabilityMessage, nextOpeningLabel, validateScheduledPickupISO } from "@/lib/order-rules";
 import { getOperationalSettings, orderingAllowed } from "@/lib/operations";
-import { calculateCart } from "@/lib/pricing";
+import { calculateCart, customizationUpcharge, getItemPrice, hasReviewPrice } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode, validatePromo } from "@/lib/promo";
+import { addonPrices, restaurant } from "@/lib/restaurant";
 import { getSupabaseAdmin, getSupabaseEnvStatus } from "@/lib/supabase-server";
 import { sendNewOrderTelegramNotification } from "@/lib/telegram";
-import type { CartItem, CartTotals, CheckoutCustomer } from "@/types";
+import type { CartCustomization, CartItem, CartTotals, CheckoutCustomer } from "@/types";
+
+const menuById = new Map(menuItems.map((item) => [item.id, item]));
+const orderingUnavailableMessage = `Online ordering is temporarily unavailable. Please call China Delight at ${restaurant.phone} to place your order.`;
+const maxQuantityPerItem = 50;
+const maxItemsPerOrder = 100;
 
 function createOrderNumber() {
   return `CD-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
@@ -23,6 +30,53 @@ function toSupabaseErrorLog(error: { message: string; details?: string; hint?: s
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+// Reprice every cart line from the server-side menu so the browser cannot tamper with
+// prices, names, or categories. Returns sanitized items whose identity fields and
+// unit_price come only from data/menu.ts (plus known add-on upcharges).
+function priceCheckoutItems(rawItems: CartItem[]): { ok: true; items: CartItem[] } | { ok: false; error: string } {
+  if (rawItems.length > maxItemsPerOrder) {
+    return { ok: false, error: "That order has too many lines. Please call the restaurant for large orders." };
+  }
+
+  const priced: CartItem[] = [];
+  for (const raw of rawItems) {
+    const menuItem = menuById.get(String(raw?.menuItemId ?? ""));
+    if (!menuItem) {
+      return { ok: false, error: "An item in your cart is no longer on the menu. Please remove it and try again." };
+    }
+    const quantity = Number(raw?.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantityPerItem) {
+      return { ok: false, error: `Invalid quantity for ${menuItem.name}.` };
+    }
+
+    const customization: CartCustomization = { ...(raw?.customization ?? { size: "order" }) };
+    // extraCharge fields are admin-dashboard-only; never accepted from the public checkout.
+    delete customization.extraChargeLabel;
+    delete customization.extraChargeAmount;
+    if (hasReviewPrice(menuItem, customization.size)) {
+      return { ok: false, error: `${menuItem.name} cannot be ordered online right now. Please call the restaurant.` };
+    }
+    const addOns = Array.isArray(customization.addOns)
+      ? customization.addOns.filter((name): name is keyof typeof addonPrices => typeof name === "string" && name in addonPrices)
+      : [];
+    if (customization.addOns) customization.addOns = addOns;
+
+    const unitPrice = Number((getItemPrice(menuItem, customization.size) + customizationUpcharge(addOns)).toFixed(2));
+
+    priced.push({
+      cartId: String(raw?.cartId ?? `${menuItem.id}-${priced.length}`),
+      menuItemId: menuItem.id,
+      number: menuItem.number,
+      name: menuItem.name,
+      category: menuItem.category,
+      quantity,
+      unitPrice,
+      customization
+    });
+  }
+  return { ok: true, items: priced };
 }
 
 export async function POST(request: Request) {
@@ -43,7 +97,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Online orders through this website are pickup only. Please use DoorDash, Uber Eats, or Grubhub for delivery." }, { status: 400 });
   }
   const paymentMethod = "pay_at_pickup";
-  const hasLunchItem = body.items.some((item) => isLunchItem(item));
+
+  const pricedResult = priceCheckoutItems(body.items);
+  if (!pricedResult.ok) {
+    return NextResponse.json({ error: pricedResult.error }, { status: 400 });
+  }
+  const items = pricedResult.items;
+
+  const hasLunchItem = items.some((item) => isLunchItem(item));
   const operationalSettings = await getOperationalSettings();
   const allowAfterOnlineCutoff = operationalSettings.orderingOverride.mode === "open";
   if (body.customer.pickupTimeType === "scheduled" && !body.customer.scheduledPickupTime) {
@@ -56,7 +117,7 @@ export async function POST(request: Request) {
   if (!orderingAllowed(operationalSettings)) {
     return NextResponse.json({ error: `${closedOrderingMessage} ${nextOpeningLabel()}` }, { status: 400 });
   }
-  const soldOutItem = body.items.find((item) => operationalSettings.soldOutItemIds.includes(item.menuItemId));
+  const soldOutItem = items.find((item) => operationalSettings.soldOutItemIds.includes(item.menuItemId));
   if (soldOutItem) {
     return NextResponse.json({ error: `${soldOutItem.name} is sold out today.` }, { status: 400 });
   }
@@ -64,161 +125,160 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: lunchAvailabilityMessage }, { status: 400 });
   }
 
-  const orderNumber = createOrderNumber();
-  let supabaseSaved = false;
-  let supabaseErrorMessage: string | null = null;
-  const supabaseEnv = getSupabaseEnvStatus();
-
   const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    console.error("[checkout] Supabase client not created; rejecting order", { supabaseEnv: getSupabaseEnvStatus() });
+    return NextResponse.json({ error: orderingUnavailableMessage }, { status: 503 });
+  }
 
-  if (supabase) {
-    // Recompute the subtotal from the items and validate any promo code server-side, so the
-    // discount and final totals are authoritative and cannot be tampered with by the client.
-    const subtotal = body.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-    const tip = Math.max(0, Number(body.totals?.tip ?? 0));
-    let promoCode: string | null = null;
-    let discountAmount = 0;
-    let promoRecord: { id: string; used_count: number; discount_type: "percentage" | "fixed" | "credit"; discount_value: number } | null = null;
+  const orderNumber = createOrderNumber();
 
-    if (body.promoCode) {
-      const code = normalizePromoCode(body.promoCode);
-      const { data: promo } = await supabase.from("promo_codes").select("*").eq("code", code).maybeSingle();
-      const validation = validatePromo(promo, subtotal);
-      if (!validation.ok) {
-        return NextResponse.json({ error: validation.error, promoInvalid: true }, { status: 400 });
-      }
-      promoRecord = promo;
-      promoCode = code;
-      discountAmount = computePromoDiscount(subtotal, promo.discount_type, promo.discount_value);
+  // Server-authoritative totals: subtotal from the repriced items, promo validated
+  // against the database, tax/fee/tip recomputed in calculateCart.
+  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const tip = Math.max(0, Number(body.totals?.tip ?? 0));
+  let promoCode: string | null = null;
+  let discountAmount = 0;
+  let promoRecord: { id: string; used_count: number; discount_type: "percentage" | "fixed" | "credit"; discount_value: number } | null = null;
+
+  if (body.promoCode) {
+    const code = normalizePromoCode(body.promoCode);
+    const { data: promo } = await supabase.from("promo_codes").select("*").eq("code", code).maybeSingle();
+    const validation = validatePromo(promo, subtotal);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error, promoInvalid: true }, { status: 400 });
     }
+    promoRecord = promo;
+    promoCode = code;
+    discountAmount = computePromoDiscount(subtotal, promo.discount_type, promo.discount_value);
+  }
 
-    const finalTotals = calculateCart(body.items, tip, discountAmount);
+  const finalTotals = calculateCart(items, tip, discountAmount);
 
-    const { data: order, error } = await supabase
-      .from("orders")
-      .insert({
-        order_number: orderNumber,
-        customer_name: body.customer.name,
-        customer_phone: body.customer.phone,
-        customer_email: body.customer.email || null,
-        fulfillment_type: body.customer.fulfillment,
-        delivery_address: null,
-        customer_notes: body.customer.notes || null,
-        payment_method: paymentMethod,
-        pickup_time_type: body.customer.pickupTimeType,
-        scheduled_pickup_time: body.customer.scheduledPickupTime || null,
-        status: "new",
-        payment_status: "unpaid",
-        subtotal: finalTotals.subtotal,
-        tax: finalTotals.tax,
-        processing_fee: finalTotals.processingFee,
-        tip_amount: finalTotals.tip,
-        promo_code: promoCode,
-        discount_amount: finalTotals.discount,
-        total: finalTotals.total
-      })
-      .select("id")
-      .single();
+  // If the browser's displayed total no longer matches the server-priced total
+  // (tampered cart, or a stale cart from before a menu price change), make the
+  // customer refresh instead of silently charging a different amount.
+  const clientTotal = Number(body.totals?.total);
+  if (Number.isFinite(clientTotal) && Math.abs(clientTotal - finalTotals.total) > 0.01) {
+    console.warn("[checkout] Client total mismatch; order rejected", { orderNumber: null, clientTotal, serverTotal: finalTotals.total });
+    return NextResponse.json({ error: "Menu prices have been updated since you started your order. Please refresh the page, review your cart, and try again." }, { status: 409 });
+  }
 
-    if (error) {
-      supabaseErrorMessage = error.message;
-      console.error("[checkout] Supabase orders insert failed", { orderNumber, error: toSupabaseErrorLog(error) });
-    } else {
-      const { error: itemsError } = await supabase.from("order_items").insert(
-        body.items.map((item) => ({
-          order_id: order.id,
-          menu_item_id: item.menuItemId,
-          item_number: item.number,
-          item_name: item.name,
-          category: item.category,
-          quantity: item.quantity,
-          unit_price: item.unitPrice,
-          customization: item.customization
-        }))
-      );
+  const { data: order, error } = await supabase
+    .from("orders")
+    .insert({
+      order_number: orderNumber,
+      customer_name: body.customer.name,
+      customer_phone: body.customer.phone,
+      customer_email: body.customer.email || null,
+      fulfillment_type: body.customer.fulfillment,
+      delivery_address: null,
+      customer_notes: body.customer.notes || null,
+      payment_method: paymentMethod,
+      pickup_time_type: body.customer.pickupTimeType,
+      scheduled_pickup_time: body.customer.scheduledPickupTime || null,
+      status: "new",
+      payment_status: "unpaid",
+      subtotal: finalTotals.subtotal,
+      tax: finalTotals.tax,
+      processing_fee: finalTotals.processingFee,
+      tip_amount: finalTotals.tip,
+      promo_code: promoCode,
+      discount_amount: finalTotals.discount,
+      total: finalTotals.total
+    })
+    .select("id")
+    .single();
 
-      if (itemsError) {
-        supabaseErrorMessage = itemsError.message;
-        console.error("[checkout] Supabase order_items insert failed", { orderNumber, orderId: order.id, error: toSupabaseErrorLog(itemsError) });
-      } else {
-        supabaseSaved = true;
-        const savedTotals = { ...finalTotals, promoCode };
-        // Count the promo use only once the order and its items are safely saved.
-        if (promoRecord) {
-          const { error: usageError } = await supabase
-            .from("promo_codes")
-            .update({ used_count: (promoRecord.used_count ?? 0) + 1, updated_at: new Date().toISOString() })
-            .eq("id", promoRecord.id);
-          if (usageError) {
-            console.error("[checkout] Promo used_count increment failed", { orderNumber, code: promoCode, error: toSupabaseErrorLog(usageError) });
-          }
-        }
-        const telegramResult = await sendNewOrderTelegramNotification({
-          orderNumber,
-          customer: body.customer,
-          items: body.items,
-          totals: savedTotals
-        });
-        if (!telegramResult.sent && !telegramResult.skipped) {
-          console.warn("[checkout] Telegram new-order notification failed", {
-            orderNumber,
-            error: telegramResult.error
-          });
-        }
-        const emailResult = await sendOrderConfirmationEmail({
-          order_number: orderNumber,
-          customer_name: body.customer.name,
-          customer_email: body.customer.email,
-          customer_phone: body.customer.phone,
-          payment_method: paymentMethod,
-          payment_status: "unpaid",
-          pickup_time_type: body.customer.pickupTimeType,
-          scheduled_pickup_time: body.customer.scheduledPickupTime || null,
-          subtotal: finalTotals.subtotal,
-          tax: finalTotals.tax,
-          processing_fee: finalTotals.processingFee,
-          tip_amount: finalTotals.tip,
-          promo_code: promoCode,
-          discount_amount: finalTotals.discount,
-          total: finalTotals.total,
-          order_items: body.items.map((item) => ({
-            item_number: item.number,
-            item_name: item.name,
-            quantity: item.quantity,
-            unit_price: item.unitPrice,
-            customization: item.customization
-          }))
-        });
-        const { error: emailUpdateError } = await supabase
-          .from("orders")
-          .update({
-            confirmation_email_sent_at: emailResult.sent ? new Date().toISOString() : null,
-            confirmation_email_error: emailResult.sent ? null : emailResult.error ?? null
-          })
-          .eq("id", order.id);
-        if (emailUpdateError) {
-          console.error("[checkout] Supabase confirmation email status update failed", {
-            orderNumber,
-            orderId: order.id,
-            error: toSupabaseErrorLog(emailUpdateError)
-          });
-        }
-      }
+  if (error) {
+    console.error("[checkout] Supabase orders insert failed; order rejected", { orderNumber, error: toSupabaseErrorLog(error) });
+    return NextResponse.json({ error: orderingUnavailableMessage }, { status: 503 });
+  }
+
+  const { error: itemsError } = await supabase.from("order_items").insert(
+    items.map((item) => ({
+      order_id: order.id,
+      menu_item_id: item.menuItemId,
+      item_number: item.number,
+      item_name: item.name,
+      category: item.category,
+      quantity: item.quantity,
+      unit_price: item.unitPrice,
+      customization: item.customization
+    }))
+  );
+
+  if (itemsError) {
+    console.error("[checkout] Supabase order_items insert failed; order rejected", { orderNumber, orderId: order.id, error: toSupabaseErrorLog(itemsError) });
+    // Remove the orphaned order header so the admin dashboard never shows an empty order.
+    const { error: cleanupError } = await supabase.from("orders").delete().eq("id", order.id);
+    if (cleanupError) {
+      console.error("[checkout] Failed to clean up orphaned order", { orderNumber, orderId: order.id, error: toSupabaseErrorLog(cleanupError) });
     }
-  } else {
-    supabaseErrorMessage = supabaseEnv.validationError ?? "Supabase env missing or invalid.";
-    console.warn("[checkout] Supabase client not created; order will use browser localStorage fallback", {
+    return NextResponse.json({ error: orderingUnavailableMessage }, { status: 503 });
+  }
+
+  const savedTotals = { ...finalTotals, promoCode };
+  // Count the promo use only once the order and its items are safely saved.
+  if (promoRecord) {
+    const { error: usageError } = await supabase
+      .from("promo_codes")
+      .update({ used_count: (promoRecord.used_count ?? 0) + 1, updated_at: new Date().toISOString() })
+      .eq("id", promoRecord.id);
+    if (usageError) {
+      console.error("[checkout] Promo used_count increment failed", { orderNumber, code: promoCode, error: toSupabaseErrorLog(usageError) });
+    }
+  }
+  const telegramResult = await sendNewOrderTelegramNotification({
+    orderNumber,
+    customer: body.customer,
+    items,
+    totals: savedTotals
+  });
+  if (!telegramResult.sent && !telegramResult.skipped) {
+    console.warn("[checkout] Telegram new-order notification failed", {
       orderNumber,
-      supabaseEnv
+      error: telegramResult.error
+    });
+  }
+  const emailResult = await sendOrderConfirmationEmail({
+    order_number: orderNumber,
+    customer_name: body.customer.name,
+    customer_email: body.customer.email,
+    customer_phone: body.customer.phone,
+    payment_method: paymentMethod,
+    payment_status: "unpaid",
+    pickup_time_type: body.customer.pickupTimeType,
+    scheduled_pickup_time: body.customer.scheduledPickupTime || null,
+    subtotal: finalTotals.subtotal,
+    tax: finalTotals.tax,
+    processing_fee: finalTotals.processingFee,
+    tip_amount: finalTotals.tip,
+    promo_code: promoCode,
+    discount_amount: finalTotals.discount,
+    total: finalTotals.total,
+    order_items: items.map((item) => ({
+      item_number: item.number,
+      item_name: item.name,
+      quantity: item.quantity,
+      unit_price: item.unitPrice,
+      customization: item.customization
+    }))
+  });
+  const { error: emailUpdateError } = await supabase
+    .from("orders")
+    .update({
+      confirmation_email_sent_at: emailResult.sent ? new Date().toISOString() : null,
+      confirmation_email_error: emailResult.sent ? null : emailResult.error ?? null
+    })
+    .eq("id", order.id);
+  if (emailUpdateError) {
+    console.error("[checkout] Supabase confirmation email status update failed", {
+      orderNumber,
+      orderId: order.id,
+      error: toSupabaseErrorLog(emailUpdateError)
     });
   }
 
-  if (!supabaseSaved) {
-    console.warn("[checkout] Falling back to client localStorage order copy", {
-      orderNumber,
-      reason: supabaseErrorMessage
-    });
-  }
-
-  return NextResponse.json({ orderNumber, supabaseSaved, supabaseError: supabaseErrorMessage });
+  return NextResponse.json({ orderNumber });
 }
