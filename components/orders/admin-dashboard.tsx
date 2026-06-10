@@ -74,6 +74,7 @@ type KitchenPrintState = {
   message?: string;
   updatedAt: string;
 };
+type KitchenPrinterTarget = "epson_epos" | "epson_tcp" | "receipt" | "bar" | "packer" | "sushi";
 type EditOrderState = {
   orderNumber: string;
   customerName: string;
@@ -131,6 +132,17 @@ const pastStatuses: OrderStatus[] = ["picked_up", "completed", "cancelled"];
 const quickStatuses: OrderStatus[] = ["preparing", "ready", "picked_up", "cancelled"];
 const acceptReadyMinuteOptions = [5, 15, 25];
 const kitchenPrintStorageKey = "china-delight-kitchen-print-statuses";
+const kitchenPrinterTargetStorageKey = "china-delight-kitchen-printer-target";
+const epsonEposIpStorageKey = "china-delight-epson-epos-ip";
+const defaultEpsonEposIp = process.env.NEXT_PUBLIC_EPSON_EPOS_IP || "192.168.1.78";
+const kitchenPrinterTargets: Array<{ value: KitchenPrinterTarget; label: string; description: string }> = [
+  { value: "epson_epos", label: "Epson ePOS TM-m30III", description: "iPad/Safari direct to 192.168.1.78" },
+  { value: "receipt", label: "Windows receipt", description: "Honor POS installed printer" },
+  { value: "bar", label: "Windows bar", description: "Honor POS installed printer" },
+  { value: "packer", label: "Windows packer", description: "Honor POS installed printer" },
+  { value: "sushi", label: "Windows sushi", description: "Honor POS installed printer" },
+  { value: "epson_tcp", label: "Epson TCP fallback", description: "Server to 192.168.1.172:9100" }
+];
 const seenNewOrdersStorageKey = "china-delight-seen-new-orders";
 const spiceLevels = ["None", "Mild", "Medium", "Hot", "Extra Hot"] as const;
 const sizeLabels: Record<MenuPriceKey, string> = { pint: "Pint", quart: "Quart", combo: "Combo", order: "Order", large: "Large", small: "Small" };
@@ -222,6 +234,196 @@ function loadSeenNewOrders() {
   } catch {
     return new Set<string>();
   }
+}
+
+function loadKitchenPrinterTarget() {
+  if (typeof window === "undefined") return "epson_epos" as KitchenPrinterTarget;
+  const saved = window.localStorage.getItem(kitchenPrinterTargetStorageKey);
+  return kitchenPrinterTargets.some((target) => target.value === saved) ? (saved as KitchenPrinterTarget) : "epson_epos";
+}
+
+function loadEpsonEposIp() {
+  if (typeof window === "undefined") return defaultEpsonEposIp;
+  return window.localStorage.getItem(epsonEposIpStorageKey)?.trim() || defaultEpsonEposIp;
+}
+
+function xmlEscape(value: string) {
+  return value.replace(/[<>&'"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[char] ?? char);
+}
+
+function receiptSafe(value: unknown) {
+  return String(value ?? "")
+    .replace(/[^\x20-\x7E\n]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wrapReceiptLine(value: string, width = 42) {
+  const words = receiptSafe(value).split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if (`${current} ${word}`.length <= width) current = `${current} ${word}`;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
+function receiptMoneyLine(label: string, value: number) {
+  const left = receiptSafe(label);
+  const right = formatPrice(value);
+  return `${left}${" ".repeat(Math.max(1, 42 - left.length - right.length))}${right}`;
+}
+
+function receiptPaymentLabel(order: AdminOrder) {
+  return order.payment_method === "stripe" && order.payment_status === "paid" ? "PAID ONLINE" : "PAY AT PICKUP";
+}
+
+function eposTicketLines(order: AdminOrder) {
+  const lines: string[] = [];
+  const divider = "-".repeat(42);
+  const doubleDivider = "=".repeat(42);
+  lines.push("CHINA DELIGHT");
+  lines.push("KITCHEN / PICKUP TICKET");
+  lines.push(`#${order.order_number}`);
+  lines.push(receiptPaymentLabel(order));
+  lines.push(doubleDivider);
+  lines.push(`NAME: ${receiptSafe(order.customer_name)}`);
+  lines.push(`PHONE: ${receiptSafe(order.customer_phone)}`);
+  lines.push(`PICKUP: ${receiptSafe(pickupLabel(order))}`);
+  lines.push(`READY: ${receiptSafe(readyLabel(order))}`);
+  lines.push(`PAYMENT: ${receiptPaymentLabel(order)}`);
+  lines.push(`STATUS: ${receiptSafe(order.status).toUpperCase()}`);
+  if (order.customer_notes) {
+    lines.push(divider);
+    lines.push("ORDER NOTES:");
+    lines.push(...wrapReceiptLine(order.customer_notes.toUpperCase()));
+  }
+  lines.push(doubleDivider);
+
+  for (const item of order.order_items) {
+    lines.push(...wrapReceiptLine(`${item.quantity} x #${item.item_number} ${item.item_name}`.toUpperCase()));
+    lines.push(`  ${formatPrice(Number(item.unit_price || 0))} each`);
+    const modifiers = customizationText(item.customization);
+    if (modifiers) {
+      lines.push("  MODIFIERS:");
+      lines.push(...wrapReceiptLine(`    - ${modifiers}`));
+    }
+    const notes = item.customization?.notes;
+    if (notes) {
+      lines.push("  SPECIAL NOTES:");
+      lines.push(...wrapReceiptLine(`    ${String(notes).toUpperCase()}`));
+    }
+    lines.push(divider);
+  }
+
+  lines.push(receiptMoneyLine("Subtotal", Number(order.subtotal || 0)));
+  if (Number(order.discount_amount ?? 0) > 0) {
+    lines.push(receiptMoneyLine(`Promo${order.promo_code ? ` ${order.promo_code}` : ""}`, -Number(order.discount_amount ?? 0)));
+  }
+  lines.push(receiptMoneyLine("Tax", Number(order.tax || 0)));
+  lines.push(receiptMoneyLine("Processing fee", Number(order.processing_fee ?? 0)));
+  lines.push(receiptMoneyLine("Tip", Number(order.tip_amount ?? 0)));
+  lines.push(doubleDivider);
+  lines.push(receiptMoneyLine("TOTAL", Number(order.total || 0)));
+  return lines;
+}
+
+function eposXml(order: AdminOrder) {
+  const lines = eposTicketLines(order);
+  const textNodes = [
+    '<text align="center"/>',
+    '<text em="true">CHINA DELIGHT&#10;</text>',
+    '<text>KITCHEN / PICKUP TICKET&#10;</text>',
+    '<text width="2" height="2" em="true">#' + xmlEscape(order.order_number) + '&#10;</text>',
+    '<text em="true">' + xmlEscape(receiptPaymentLabel(order)) + '&#10;</text>',
+    '<text align="left"/>',
+    ...lines.slice(4).map((line) => `<text>${xmlEscape(line)}&#10;</text>`),
+    '<feed line="3"/>',
+    '<cut type="feed"/>'
+  ].join("");
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+      ${textNodes}
+    </epos-print>
+  </s:Body>
+</s:Envelope>`;
+}
+
+async function sendEposPrint(order: AdminOrder, ipAddress: string) {
+  const ip = ipAddress.trim();
+  if (!ip) throw new Error("Enter the Epson ePOS printer IP address.");
+  const url = `http://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+  const payload = eposXml(order);
+  console.info("[epos-print] Sending kitchen ticket", {
+    url,
+    orderNumber: order.order_number,
+    payloadLength: payload.length
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=utf-8" },
+      body: payload
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown network error";
+    console.error("[epos-print] Network error", {
+      url,
+      orderNumber: order.order_number,
+      message
+    });
+    throw new Error(
+      `Epson ePOS network error for ${url}: ${message}. If Safari shows this on HTTPS, open admin over local HTTP or allow the printer endpoint.`
+    );
+  }
+
+  const responseText = await response.text().catch((error) => {
+    const message = error instanceof Error ? error.message : "Unable to read response text";
+    console.error("[epos-print] Response read error", {
+      url,
+      orderNumber: order.order_number,
+      status: response.status,
+      message
+    });
+    return "";
+  });
+
+  console.info("[epos-print] Response", {
+    url,
+    orderNumber: order.order_number,
+    status: response.status,
+    statusText: response.statusText,
+    responseText
+  });
+
+  if (!response.ok) {
+    throw new Error(`Epson ePOS HTTP ${response.status} ${response.statusText}: ${responseText || "No response body"}`);
+  }
+  if (/success=["']false["']/i.test(responseText)) {
+    throw new Error(`Epson ePOS rejected the print job: ${responseText.slice(0, 500)}`);
+  }
+  if (!/success=["']true["']/i.test(responseText)) {
+    console.warn("[epos-print] Response did not include success=true", {
+      url,
+      orderNumber: order.order_number,
+      responseText
+    });
+  }
+  return responseText;
 }
 
 function matchesFilter(order: AdminOrder, filter: AdminFilter) {
@@ -346,6 +548,8 @@ export function AdminDashboard() {
   const [networkPrintingOrders, setNetworkPrintingOrders] = useState<Set<string>>(new Set());
   const [kitchenPrintStatus, setKitchenPrintStatus] = useState<Record<string, KitchenPrintState>>({});
   const [printStatusLoaded, setPrintStatusLoaded] = useState(false);
+  const [kitchenPrinterTarget, setKitchenPrinterTarget] = useState<KitchenPrinterTarget>("epson_epos");
+  const [epsonEposIp, setEpsonEposIp] = useState(defaultEpsonEposIp);
   const [addItemSearch, setAddItemSearch] = useState("");
   const [newItemDraft, setNewItemDraft] = useState<NewItemDraft | null>(null);
   const previousNewOrders = useRef<Set<string>>(new Set());
@@ -369,7 +573,17 @@ export function AdminDashboard() {
     setKitchenPrintStatus(saved);
     setPrintStatusLoaded(true);
     seenNewOrdersRef.current = loadSeenNewOrders();
+    setKitchenPrinterTarget(loadKitchenPrinterTarget());
+    setEpsonEposIp(loadEpsonEposIp());
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(kitchenPrinterTargetStorageKey, kitchenPrinterTarget);
+  }, [kitchenPrinterTarget]);
+
+  useEffect(() => {
+    window.localStorage.setItem(epsonEposIpStorageKey, epsonEposIp.trim() || defaultEpsonEposIp);
+  }, [epsonEposIp]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("china-delight-admin-sound");
@@ -708,19 +922,24 @@ export function AdminDashboard() {
     await navigator.clipboard?.writeText(phone).catch(() => undefined);
   }
 
-  const printKitchenTicket = useCallback(async (orderNumber: string) => {
+  const printKitchenTicket = useCallback(async (order: AdminOrder) => {
+    const orderNumber = order.order_number;
     setNetworkPrintingOrders((current) => new Set(current).add(orderNumber));
     try {
-      const response = await fetch("/api/admin/print-ticket", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNumber })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Printer did not respond.");
+      if (kitchenPrinterTarget === "epson_epos") {
+        await sendEposPrint(order, epsonEposIp);
+      } else {
+        const response = await fetch("/api/admin/print-ticket", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderNumber, printerTarget: kitchenPrinterTarget })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Printer did not respond.");
+      }
       saveKitchenPrintState(orderNumber, {
         status: "printed",
-        message: "Printed",
+        message: kitchenPrinterTarget === "epson_epos" ? `Printed by ePOS ${epsonEposIp}` : `Printed by ${kitchenPrinterTarget}`,
         updatedAt: new Date().toISOString()
       });
     } catch (error) {
@@ -736,7 +955,7 @@ export function AdminDashboard() {
         return next;
       });
     }
-  }, [saveKitchenPrintState]);
+  }, [epsonEposIp, kitchenPrinterTarget, saveKitchenPrintState]);
 
   useEffect(() => {
     if (!printStatusLoaded) return;
@@ -746,7 +965,7 @@ export function AdminDashboard() {
       if (autoPrintAttemptedRef.current.has(orderNumber)) return;
       if (kitchenPrintStatusRef.current[orderNumber]) return;
       autoPrintAttemptedRef.current.add(orderNumber);
-      void printKitchenTicket(orderNumber);
+      void printKitchenTicket(order);
     });
   }, [networkPrintingOrders, orders, printKitchenTicket, printStatusLoaded]);
 
@@ -1116,6 +1335,36 @@ export function AdminDashboard() {
           <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, order number, or item" className="focus-ring h-14 w-full rounded-md border border-china-gold/70 bg-white pl-12 pr-4 text-lg" />
         </label>
+        <div className="grid gap-3 rounded-lg border border-china-gold/60 bg-white p-3 md:grid-cols-[1.2fr_1fr]">
+          <div>
+            <label className="text-xs font-black uppercase tracking-[0.12em] text-china-red">Kitchen printer</label>
+            <select
+              value={kitchenPrinterTarget}
+              onChange={(event) => setKitchenPrinterTarget(event.target.value as KitchenPrinterTarget)}
+              className="focus-ring mt-1 h-12 w-full rounded-md border border-china-gold/70 bg-white px-3 text-base font-bold"
+            >
+              {kitchenPrinterTargets.map((target) => (
+                <option key={target.value} value={target.value}>
+                  {target.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs font-bold text-stone-600">
+              {kitchenPrinterTargets.find((target) => target.value === kitchenPrinterTarget)?.description}
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-black uppercase tracking-[0.12em] text-china-red">Epson ePOS IP</label>
+            <input
+              value={epsonEposIp}
+              onChange={(event) => setEpsonEposIp(event.target.value)}
+              disabled={kitchenPrinterTarget !== "epson_epos"}
+              className="focus-ring mt-1 h-12 w-full rounded-md border border-china-gold/70 bg-white px-3 text-base font-bold disabled:bg-stone-100 disabled:text-stone-500"
+              placeholder="192.168.1.78"
+            />
+            <p className="mt-1 text-xs font-bold text-stone-600">ePOS prints directly from this admin browser on restaurant Wi-Fi.</p>
+          </div>
+        </div>
       </div>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
         {filterTabs.map((tab) => (
@@ -1234,7 +1483,7 @@ export function AdminDashboard() {
                   Mark Ready & Email Customer
                 </button>
                 <button
-                  onClick={() => printKitchenTicket(order.order_number)}
+                  onClick={() => printKitchenTicket(order)}
                   disabled={networkPrintingOrders.has(order.order_number)}
                   className="focus-ring min-h-11 rounded-md border border-china-red bg-china-red px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400"
                 >
@@ -1250,7 +1499,9 @@ export function AdminDashboard() {
                   <p className="rounded-md bg-green-100 px-2 py-1 text-xs font-black uppercase text-green-800">Printed</p>
                 )}
                 {printState?.status === "failed" && (
-                  <p className="rounded-md bg-amber-100 px-2 py-1 text-xs font-bold text-amber-950">Printer Offline / Failed: {printState.message ?? "Printer did not respond."}</p>
+                  <p className="whitespace-pre-wrap break-words rounded-md bg-amber-100 px-2 py-1 text-xs font-bold text-amber-950">
+                    Printer Offline / Failed: {printState.message ?? "Printer did not respond."}
+                  </p>
                 )}
                 <div className="grid grid-cols-4 gap-2">
                   {activeStatuses.includes(order.status) ? (

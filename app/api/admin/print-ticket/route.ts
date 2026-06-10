@@ -1,4 +1,9 @@
 import net from "node:net";
+import { execFile } from "node:child_process";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAdminCookieName, isValidAdminSession } from "@/lib/admin-auth";
@@ -13,6 +18,9 @@ export const dynamic = "force-dynamic";
 const printerHost = "192.168.1.172";
 const printerPort = 9100;
 const lineWidth = 42;
+const execFileAsync = promisify(execFile);
+const windowsPrinterNames = ["receipt", "bar", "packer", "sushi"] as const;
+const windowsPrinterTargets = new Set<string>(windowsPrinterNames);
 
 type PrintOrder = {
   order_number: string;
@@ -40,6 +48,8 @@ type PrintOrder = {
     customization?: Record<string, unknown> | null;
   }>;
 };
+
+type PrinterTarget = "epson_tcp" | typeof windowsPrinterNames[number];
 
 function text(value: unknown) {
   return String(value ?? "")
@@ -88,54 +98,64 @@ function pickupText(order: PrintOrder) {
   return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
 }
 
-function escposTicket(order: PrintOrder) {
-  const bodyLines: string[] = [];
+function ticketLines(order: PrintOrder) {
+  const lines: string[] = [];
   const divider = "-".repeat(lineWidth);
   const doubleDivider = "=".repeat(lineWidth);
 
-  bodyLines.push(doubleDivider);
-  bodyLines.push(`NAME: ${text(order.customer_name)}`);
-  bodyLines.push(`PHONE: ${text(order.customer_phone)}`);
-  bodyLines.push(`PICKUP: ${text(pickupText(order))}`);
-  if (order.estimated_ready_at) bodyLines.push(`READY: ${text(formatPickupDateTime(order.estimated_ready_at))}`);
-  bodyLines.push(`PAYMENT: ${paymentBanner(order)}`);
-  bodyLines.push(`STATUS: ${text(order.status).toUpperCase()}`);
+  lines.push(center("CHINA DELIGHT"));
+  lines.push(center("KITCHEN / PICKUP TICKET"));
+  lines.push(doubleDivider);
+  lines.push(center(`#${order.order_number}`));
+  lines.push(center(paymentBanner(order)));
+  lines.push(doubleDivider);
+  lines.push(`NAME: ${text(order.customer_name)}`);
+  lines.push(`PHONE: ${text(order.customer_phone)}`);
+  lines.push(`PICKUP: ${text(pickupText(order))}`);
+  if (order.estimated_ready_at) lines.push(`READY: ${text(formatPickupDateTime(order.estimated_ready_at))}`);
+  lines.push(`PAYMENT: ${paymentBanner(order)}`);
+  lines.push(`STATUS: ${text(order.status).toUpperCase()}`);
   if (order.customer_notes) {
-    bodyLines.push(divider);
-    bodyLines.push("ORDER NOTES:");
-    bodyLines.push(...wrapLine(order.customer_notes.toUpperCase()));
+    lines.push(divider);
+    lines.push("ORDER NOTES:");
+    lines.push(...wrapLine(order.customer_notes.toUpperCase()));
   }
-  bodyLines.push(doubleDivider);
+  lines.push(doubleDivider);
 
   for (const item of order.order_items ?? []) {
     const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${item.item_name}`;
-    bodyLines.push(...wrapLine(itemTitle.toUpperCase()));
-    bodyLines.push(`  ${formatPrice(Number(item.unit_price || 0))} each`);
+    lines.push(...wrapLine(itemTitle.toUpperCase()));
+    lines.push(`  ${formatPrice(Number(item.unit_price || 0))} each`);
     const modifiers = customizationParts(item.customization ?? {});
     if (modifiers.length) {
-      bodyLines.push("  MODIFIERS:");
+      lines.push("  MODIFIERS:");
       for (const part of modifiers) {
-        bodyLines.push(...wrapLine(`    - ${part}`));
+        lines.push(...wrapLine(`    - ${part}`));
       }
     }
     const notes = item.customization?.notes;
     if (notes) {
-      bodyLines.push("  SPECIAL NOTES:");
-      bodyLines.push(...wrapLine(`    ${String(notes).toUpperCase()}`));
+      lines.push("  SPECIAL NOTES:");
+      lines.push(...wrapLine(`    ${String(notes).toUpperCase()}`));
     }
-    bodyLines.push(divider);
+    lines.push(divider);
   }
 
-  bodyLines.push(moneyLine("Subtotal", Number(order.subtotal || 0)));
+  lines.push(moneyLine("Subtotal", Number(order.subtotal || 0)));
   if (Number(order.discount_amount ?? 0) > 0) {
-    bodyLines.push(moneyLine(`Promo${order.promo_code ? ` ${order.promo_code}` : ""}`, -Number(order.discount_amount ?? 0)));
+    lines.push(moneyLine(`Promo${order.promo_code ? ` ${order.promo_code}` : ""}`, -Number(order.discount_amount ?? 0)));
   }
-  bodyLines.push(moneyLine("Tax", Number(order.tax || 0)));
-  bodyLines.push(moneyLine("Processing fee", Number(order.processing_fee ?? 0)));
-  bodyLines.push(moneyLine("Tip", Number(order.tip_amount ?? 0)));
-  bodyLines.push(doubleDivider);
-  bodyLines.push(moneyLine("TOTAL", Number(order.total || 0)));
-  bodyLines.push("\n\n");
+  lines.push(moneyLine("Tax", Number(order.tax || 0)));
+  lines.push(moneyLine("Processing fee", Number(order.processing_fee ?? 0)));
+  lines.push(moneyLine("Tip", Number(order.tip_amount ?? 0)));
+  lines.push(doubleDivider);
+  lines.push(moneyLine("TOTAL", Number(order.total || 0)));
+
+  return lines;
+}
+
+function escposTicket(order: PrintOrder) {
+  const bodyLines = ticketLines(order).slice(6);
 
   return Buffer.concat([
     Buffer.from([0x1b, 0x40]), // Initialize printer.
@@ -153,6 +173,10 @@ function escposTicket(order: PrintOrder) {
     Buffer.from([0x0a, 0x0a, 0x0a]),
     Buffer.from([0x1d, 0x56, 0x42, 0x00]) // Partial cut.
   ]);
+}
+
+function plainTextTicket(order: PrintOrder) {
+  return `${ticketLines(order).join("\r\n")}\r\n\r\n\r\n`;
 }
 
 function sendToPrinter(payload: Buffer) {
@@ -185,13 +209,63 @@ function sendToPrinter(payload: Buffer) {
   });
 }
 
+async function sendToWindowsPrinter(order: PrintOrder, printerName: string) {
+  if (!windowsPrinterTargets.has(printerName)) {
+    throw new Error(`Unsupported Windows printer "${printerName}".`);
+  }
+
+  const ticketPath = path.join(os.tmpdir(), `china-delight-ticket-${order.order_number}-${Date.now()}.txt`);
+  await fs.writeFile(ticketPath, plainTextTicket(order), "utf8");
+
+  const script = `
+$ticketPath = $args[0]
+$printerName = $args[1]
+$printers = [System.Drawing.Printing.PrinterSettings]::InstalledPrinters
+$matchedPrinter = $null
+foreach ($printer in $printers) {
+  if ($printer -ieq $printerName) {
+    $matchedPrinter = $printer
+    break
+  }
+}
+if (-not $matchedPrinter) {
+  throw "Windows printer '$printerName' is not installed. Installed printers: $($printers -join ', ')"
+}
+Add-Type -AssemblyName System.Drawing
+$content = Get-Content -LiteralPath $ticketPath -Raw
+$font = New-Object System.Drawing.Font("Consolas", 9)
+$brush = [System.Drawing.Brushes]::Black
+$printDoc = New-Object System.Drawing.Printing.PrintDocument
+$printDoc.PrinterSettings.PrinterName = $matchedPrinter
+$printDoc.DocumentName = "China Delight Kitchen Ticket"
+$printDoc.add_PrintPage({
+  param($sender, $eventArgs)
+  $eventArgs.Graphics.DrawString($content, $font, $brush, 0, 0)
+})
+$printDoc.Print()
+`;
+
+  try {
+    await execFileAsync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script, ticketPath, printerName], { timeout: 15000 });
+  } finally {
+    await fs.unlink(ticketPath).catch(() => undefined);
+  }
+}
+
+function normalizePrinterTarget(value: unknown): PrinterTarget {
+  const target = typeof value === "string" ? value.trim() : "";
+  if (target === "epson_tcp" || windowsPrinterTargets.has(target)) return target as PrinterTarget;
+  return "epson_tcp";
+}
+
 export async function POST(request: Request) {
   if (!isValidAdminSession(cookies().get(getAdminCookieName())?.value)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = (await request.json()) as { orderNumber?: string };
+  const body = (await request.json()) as { orderNumber?: string; printerTarget?: string };
   const orderNumber = body.orderNumber?.trim();
+  const printerTarget = normalizePrinterTarget(body.printerTarget);
   if (!orderNumber) return NextResponse.json({ error: "Missing order number." }, { status: 400 });
 
   const supabase = getSupabaseAdmin();
@@ -208,15 +282,30 @@ export async function POST(request: Request) {
   }
 
   try {
-    await sendToPrinter(escposTicket(order as PrintOrder));
-    return NextResponse.json({ ok: true });
+    if (printerTarget === "epson_tcp") {
+      await sendToPrinter(escposTicket(order as PrintOrder));
+      return NextResponse.json({ ok: true, printerTarget, printerLabel: `Epson TCP ${printerHost}:${printerPort}` });
+    }
+
+    await sendToWindowsPrinter(order as PrintOrder, printerTarget);
+    return NextResponse.json({ ok: true, printerTarget, printerLabel: `Windows printer: ${printerTarget}` });
   } catch (error) {
-    console.error("[print-ticket] Epson TM-m30 print failed", {
+    console.error("[print-ticket] Kitchen print failed", {
       orderNumber,
-      host: printerHost,
-      port: printerPort,
+      printerTarget,
+      ...(printerTarget === "epson_tcp" ? { host: printerHost, port: printerPort } : { windowsPrinter: printerTarget }),
       message: error instanceof Error ? error.message : "Unknown printer error"
     });
-    return NextResponse.json({ error: "Printer did not respond. Check power, paper, and network connection." }, { status: 502 });
+    return NextResponse.json(
+      {
+        error:
+          printerTarget === "epson_tcp"
+            ? "Printer did not respond. Check power, paper, and network connection."
+            : error instanceof Error
+              ? error.message
+              : "Windows printer did not respond."
+      },
+      { status: 502 }
+    );
   }
 }
