@@ -1,9 +1,4 @@
 import net from "node:net";
-import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAdminCookieName, isValidAdminSession } from "@/lib/admin-auth";
@@ -15,12 +10,11 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const printerHost = "192.168.1.172";
-const printerPort = 9100;
+// Local Epson TM-m30 / M335A receipt printer on the restaurant network.
+// ESC/POS over a raw TCP socket (port 9100). Override with PRINTER_IP / PRINTER_PORT.
+const printerHost = process.env.PRINTER_IP?.trim() || "192.168.1.172";
+const printerPort = Number(process.env.PRINTER_PORT) || 9100;
 const lineWidth = 42;
-const execFileAsync = promisify(execFile);
-const windowsPrinterNames = ["receipt", "bar", "packer", "sushi"] as const;
-const windowsPrinterTargets = new Set<string>(windowsPrinterNames);
 
 type PrintOrder = {
   order_number: string;
@@ -48,8 +42,6 @@ type PrintOrder = {
     customization?: Record<string, unknown> | null;
   }>;
 };
-
-type PrinterTarget = "epson_tcp" | typeof windowsPrinterNames[number];
 
 function text(value: unknown) {
   return String(value ?? "")
@@ -175,10 +167,6 @@ function escposTicket(order: PrintOrder) {
   ]);
 }
 
-function plainTextTicket(order: PrintOrder) {
-  return `${ticketLines(order).join("\r\n")}\r\n\r\n\r\n`;
-}
-
 function sendToPrinter(payload: Buffer) {
   return new Promise<void>((resolve, reject) => {
     const socket = net.createConnection({ host: printerHost, port: printerPort });
@@ -209,63 +197,13 @@ function sendToPrinter(payload: Buffer) {
   });
 }
 
-async function sendToWindowsPrinter(order: PrintOrder, printerName: string) {
-  if (!windowsPrinterTargets.has(printerName)) {
-    throw new Error(`Unsupported Windows printer "${printerName}".`);
-  }
-
-  const ticketPath = path.join(os.tmpdir(), `china-delight-ticket-${order.order_number}-${Date.now()}.txt`);
-  await fs.writeFile(ticketPath, plainTextTicket(order), "utf8");
-
-  const script = `
-$ticketPath = $args[0]
-$printerName = $args[1]
-$printers = [System.Drawing.Printing.PrinterSettings]::InstalledPrinters
-$matchedPrinter = $null
-foreach ($printer in $printers) {
-  if ($printer -ieq $printerName) {
-    $matchedPrinter = $printer
-    break
-  }
-}
-if (-not $matchedPrinter) {
-  throw "Windows printer '$printerName' is not installed. Installed printers: $($printers -join ', ')"
-}
-Add-Type -AssemblyName System.Drawing
-$content = Get-Content -LiteralPath $ticketPath -Raw
-$font = New-Object System.Drawing.Font("Consolas", 9)
-$brush = [System.Drawing.Brushes]::Black
-$printDoc = New-Object System.Drawing.Printing.PrintDocument
-$printDoc.PrinterSettings.PrinterName = $matchedPrinter
-$printDoc.DocumentName = "China Delight Kitchen Ticket"
-$printDoc.add_PrintPage({
-  param($sender, $eventArgs)
-  $eventArgs.Graphics.DrawString($content, $font, $brush, 0, 0)
-})
-$printDoc.Print()
-`;
-
-  try {
-    await execFileAsync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script, ticketPath, printerName], { timeout: 15000 });
-  } finally {
-    await fs.unlink(ticketPath).catch(() => undefined);
-  }
-}
-
-function normalizePrinterTarget(value: unknown): PrinterTarget {
-  const target = typeof value === "string" ? value.trim() : "";
-  if (target === "epson_tcp" || windowsPrinterTargets.has(target)) return target as PrinterTarget;
-  return "epson_tcp";
-}
-
 export async function POST(request: Request) {
   if (!isValidAdminSession(cookies().get(getAdminCookieName())?.value)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = (await request.json()) as { orderNumber?: string; printerTarget?: string };
+  const body = (await request.json()) as { orderNumber?: string };
   const orderNumber = body.orderNumber?.trim();
-  const printerTarget = normalizePrinterTarget(body.printerTarget);
   if (!orderNumber) return NextResponse.json({ error: "Missing order number." }, { status: 400 });
 
   const supabase = getSupabaseAdmin();
@@ -282,32 +220,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (printerTarget === "epson_tcp") {
-      await sendToPrinter(escposTicket(order as PrintOrder));
-      return NextResponse.json({ ok: true, printerTarget, printerLabel: `Epson TCP ${printerHost}:${printerPort}` });
-    }
-
-    await sendToWindowsPrinter(order as PrintOrder, printerTarget);
-    return NextResponse.json({ ok: true, printerTarget, printerLabel: `Windows printer: ${printerTarget}` });
-  } catch (error) {
-    console.error("[print-ticket] Kitchen print failed", {
-      orderNumber,
-      printerTarget,
-      ...(printerTarget === "epson_tcp" ? { host: printerHost, port: printerPort } : { windowsPrinter: printerTarget }),
-      message: error instanceof Error ? error.message : "Unknown printer error"
-    });
-    return NextResponse.json(
-      {
-        error:
-          printerTarget === "epson_tcp"
-            ? error instanceof Error
-              ? `Epson TCP ${printerHost}:${printerPort} failed: ${error.message}`
-              : `Epson TCP ${printerHost}:${printerPort} failed with an unknown error.`
-            : error instanceof Error
-              ? error.message
-              : "Windows printer did not respond."
-      },
-      { status: 502 }
-    );
+    await sendToPrinter(escposTicket(order as PrintOrder));
+    return NextResponse.json({ ok: true, printerLabel: `Epson TCP ${printerHost}:${printerPort}` });
+  } catch (printError) {
+    const message = printError instanceof Error ? printError.message : "Unknown printer error";
+    console.error("[print-ticket] Kitchen print failed", { orderNumber, host: printerHost, port: printerPort, message });
+    return NextResponse.json({ error: `Epson TCP ${printerHost}:${printerPort} failed: ${message}` }, { status: 502 });
   }
 }
