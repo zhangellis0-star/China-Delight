@@ -81,6 +81,9 @@ type KitchenPrintState = {
     responseText?: string;
     networkError?: string;
     blocked?: boolean;
+    payloadLength?: number;
+    first1000CharactersOfXml?: string;
+    last1000CharactersOfXml?: string;
   };
 };
 type KitchenPrinterTarget = "epson_epos" | "epson_tcp" | "receipt" | "bar" | "packer" | "sushi";
@@ -389,6 +392,136 @@ function eposXml(order: AdminOrder) {
 </s:Envelope>`;
 }
 
+function eposPayloadDebug(payload: string) {
+  return {
+    payloadLength: payload.length,
+    first1000CharactersOfXml: payload.slice(0, 1000),
+    last1000CharactersOfXml: payload.slice(-1000)
+  };
+}
+
+function minimalKitchenEposXml(order: AdminOrder) {
+  const firstItem = order.order_items[0];
+  const itemLine = firstItem
+    ? `${firstItem.quantity} x #${firstItem.item_number} ${firstItem.item_name}`
+    : "No items";
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+      <text align="center"/>
+      <text em="true">CHINA DELIGHT&#10;</text>
+      <text em="true">ORDER #${xmlEscape(receiptSafe(order.order_number))}&#10;</text>
+      <text align="left"/>
+      <text>Customer: ${xmlEscape(receiptSafe(order.customer_name))}&#10;</text>
+      <text>Item: ${xmlEscape(receiptSafe(itemLine))}&#10;</text>
+      <feed line="3"/>
+      <cut type="feed"/>
+    </epos-print>
+  </s:Body>
+</s:Envelope>`;
+}
+
+function simpleTestTicketXml() {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+      <text align="center"/>
+      <text em="true">CHINA DELIGHT&#10;</text>
+      <text>Simple ePOS test ticket&#10;</text>
+      <text>${xmlEscape(new Date().toLocaleString())}&#10;</text>
+      <feed line="3"/>
+      <cut type="feed"/>
+    </epos-print>
+  </s:Body>
+</s:Envelope>`;
+}
+
+async function sendEposPayload(payload: string, ipAddress: string, protocol: EposProtocol, label: string) {
+  const ip = ipAddress.trim();
+  if (!ip) throw new Error("Enter the Epson ePOS printer IP address.");
+  const url = `${protocol}://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+  const payloadDebug = eposPayloadDebug(payload);
+  console.info(`[epos-print] Sending ${label}`, {
+    url,
+    ...payloadDebug
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=utf-8" },
+      body: payload
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown network error";
+    const blocked = /failed to fetch|load failed|networkerror|cors|mixed content|blocked/i.test(message);
+    console.error(`[epos-print] ${label} network error`, {
+      url,
+      ...payloadDebug,
+      message,
+      blocked
+    });
+    throw new EposPrintError(`Epson ePOS network error: ${message}`, {
+      printerMode: "epson_epos",
+      printerIp: ip,
+      endpointUrl: url,
+      httpStatus: null,
+      responseText: "",
+      networkError: message,
+      blocked,
+      ...payloadDebug
+    });
+  }
+
+  const responseText = await response.text().catch((error) => {
+    const message = error instanceof Error ? error.message : "Unable to read response text";
+    console.error(`[epos-print] ${label} response read error`, {
+      url,
+      status: response.status,
+      message
+    });
+    return "";
+  });
+
+  console.info(`[epos-print] ${label} response`, {
+    url,
+    status: response.status,
+    statusText: response.statusText,
+    responseText,
+    ...payloadDebug
+  });
+
+  if (!response.ok) {
+    throw new EposPrintError(`Epson ePOS HTTP ${response.status} ${response.statusText}`, {
+      printerMode: "epson_epos",
+      printerIp: ip,
+      endpointUrl: url,
+      httpStatus: response.status,
+      responseText: responseText || "No response body",
+      networkError: "",
+      blocked: false,
+      ...payloadDebug
+    });
+  }
+  if (/success=["']false["']/i.test(responseText)) {
+    throw new EposPrintError("Epson ePOS rejected the print job.", {
+      printerMode: "epson_epos",
+      printerIp: ip,
+      endpointUrl: url,
+      httpStatus: response.status,
+      responseText: responseText.slice(0, 1000),
+      networkError: "",
+      blocked: false,
+      ...payloadDebug
+    });
+  }
+  return { url, responseText };
+}
+
 async function sendEposPrint(order: AdminOrder, ipAddress: string, protocol: EposProtocol) {
   const ip = ipAddress.trim();
   if (!ip) throw new Error("Enter the Epson ePOS printer IP address.");
@@ -400,13 +533,21 @@ async function sendEposPrint(order: AdminOrder, ipAddress: string, protocol: Epo
     httpStatus: null,
     responseText: "",
     networkError: "",
-    blocked: false
+    blocked: false,
+    payloadLength: undefined,
+    first1000CharactersOfXml: undefined,
+    last1000CharactersOfXml: undefined
   };
-  const payload = eposXml(order);
+  const payload = minimalKitchenEposXml(order);
+  const payloadDebug = eposPayloadDebug(payload);
+  console.info("[epos-print] Minimal kitchen ticket XML preview", {
+    endpointUrl: url,
+    ...payloadDebug
+  });
   console.info("[epos-print] Sending kitchen ticket", {
     url,
     orderNumber: order.order_number,
-    payloadLength: payload.length
+    ...payloadDebug
   });
 
   let response: Response;
@@ -423,12 +564,14 @@ async function sendEposPrint(order: AdminOrder, ipAddress: string, protocol: Epo
       url,
       orderNumber: order.order_number,
       message,
-      blocked
+      blocked,
+      ...payloadDebug
     });
     throw new EposPrintError(`Epson ePOS network error: ${message}`, {
       ...baseDebug,
       networkError: message,
-      blocked
+      blocked,
+      ...payloadDebug
     });
   }
 
@@ -448,21 +591,24 @@ async function sendEposPrint(order: AdminOrder, ipAddress: string, protocol: Epo
     orderNumber: order.order_number,
     status: response.status,
     statusText: response.statusText,
-    responseText
+    responseText,
+    ...payloadDebug
   });
 
   if (!response.ok) {
     throw new EposPrintError(`Epson ePOS HTTP ${response.status} ${response.statusText}`, {
       ...baseDebug,
       httpStatus: response.status,
-      responseText: responseText || "No response body"
+      responseText: responseText || "No response body",
+      ...payloadDebug
     });
   }
   if (/success=["']false["']/i.test(responseText)) {
     throw new EposPrintError("Epson ePOS rejected the print job.", {
       ...baseDebug,
       httpStatus: response.status,
-      responseText: responseText.slice(0, 1000)
+      responseText: responseText.slice(0, 1000),
+      ...payloadDebug
     });
   }
   if (!/success=["']true["']/i.test(responseText)) {
@@ -472,7 +618,15 @@ async function sendEposPrint(order: AdminOrder, ipAddress: string, protocol: Epo
       responseText
     });
   }
-  return responseText;
+  return {
+    responseText,
+    debug: {
+      ...baseDebug,
+      httpStatus: response.status,
+      responseText: responseText.slice(0, 1000),
+      ...payloadDebug
+    }
+  };
 }
 
 function matchesFilter(order: AdminOrder, filter: AdminFilter) {
@@ -600,6 +754,8 @@ export function AdminDashboard() {
   const [kitchenPrinterTarget, setKitchenPrinterTarget] = useState<KitchenPrinterTarget>("epson_epos");
   const [epsonEposIp, setEpsonEposIp] = useState(defaultEpsonEposIp);
   const [epsonEposProtocol, setEpsonEposProtocol] = useState<EposProtocol>(defaultEpsonEposProtocol);
+  const [simpleTestPrinting, setSimpleTestPrinting] = useState(false);
+  const [simpleTestResult, setSimpleTestResult] = useState<string | null>(null);
   const [addItemSearch, setAddItemSearch] = useState("");
   const [newItemDraft, setNewItemDraft] = useState<NewItemDraft | null>(null);
   const previousNewOrders = useRef<Set<string>>(new Set());
@@ -977,12 +1133,30 @@ export function AdminDashboard() {
     await navigator.clipboard?.writeText(phone).catch(() => undefined);
   }
 
+  async function sendSimpleTestTicket() {
+    setSimpleTestPrinting(true);
+    setSimpleTestResult(null);
+    try {
+      const payload = simpleTestTicketXml();
+      const result = await sendEposPayload(payload, epsonEposIp, epsonEposProtocol, "simple test ticket");
+      setSimpleTestResult(`Simple test sent. Endpoint: ${result.url}. Response: ${result.responseText || "empty response"}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Simple test ticket failed.";
+      const debug = error instanceof EposPrintError ? ` Response: ${error.debug.responseText || "none"} Network: ${error.debug.networkError || "none"}` : "";
+      setSimpleTestResult(`Simple test failed: ${message}${debug}`);
+    } finally {
+      setSimpleTestPrinting(false);
+    }
+  }
+
   const printKitchenTicket = useCallback(async (order: AdminOrder) => {
     const orderNumber = order.order_number;
     setNetworkPrintingOrders((current) => new Set(current).add(orderNumber));
+    let eposSuccessDebug: NonNullable<KitchenPrintState["debug"]> | undefined;
     try {
       if (kitchenPrinterTarget === "epson_epos") {
-        await sendEposPrint(order, epsonEposIp, epsonEposProtocol);
+        const result = await sendEposPrint(order, epsonEposIp, epsonEposProtocol);
+        eposSuccessDebug = result.debug;
       } else {
         const response = await fetch("/api/admin/print-ticket", {
           method: "POST",
@@ -998,15 +1172,7 @@ export function AdminDashboard() {
         updatedAt: new Date().toISOString(),
         debug:
           kitchenPrinterTarget === "epson_epos"
-            ? {
-                printerMode: "epson_epos",
-                printerIp: epsonEposIp.trim(),
-                endpointUrl: `${epsonEposProtocol}://${epsonEposIp.trim()}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`,
-                httpStatus: 200,
-                responseText: "Printed successfully",
-                networkError: "",
-                blocked: false
-              }
+            ? eposSuccessDebug
             : { printerMode: kitchenPrinterTarget }
       });
     } catch (error) {
@@ -1461,6 +1627,20 @@ export function AdminDashboard() {
               Open printer endpoint test
             </Link>
           </div>
+          <div className="md:col-span-3">
+            <button
+              onClick={sendSimpleTestTicket}
+              disabled={simpleTestPrinting || kitchenPrinterTarget !== "epson_epos"}
+              className="focus-ring min-h-11 rounded-md border border-china-green bg-china-green px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400"
+            >
+              {simpleTestPrinting ? "Sending Simple Test..." : "Send Simple Test Ticket"}
+            </button>
+            {simpleTestResult && (
+              <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-china-aqua px-3 py-2 text-xs font-bold text-teal-950">
+                {simpleTestResult}
+              </p>
+            )}
+          </div>
         </div>
       </div>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
@@ -1607,6 +1787,15 @@ export function AdminDashboard() {
                       <p>request blocked: {printState.debug?.blocked ? "yes" : "no"}</p>
                       <p className="whitespace-pre-wrap break-words">fetch/network error: {printState.debug?.networkError || "none"}</p>
                       <p className="whitespace-pre-wrap break-words">response text: {printState.debug?.responseText || "none"}</p>
+                      <p>XML length: {printState.debug?.payloadLength ?? "n/a"}</p>
+                      <details className="grid gap-1">
+                        <summary className="cursor-pointer font-black text-amber-950">XML first 1000 characters</summary>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-stone-100 p-2">{printState.debug?.first1000CharactersOfXml || "n/a"}</pre>
+                      </details>
+                      <details className="grid gap-1">
+                        <summary className="cursor-pointer font-black text-amber-950">XML last 1000 characters</summary>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-stone-100 p-2">{printState.debug?.last1000CharactersOfXml || "n/a"}</pre>
+                      </details>
                     </div>
                   </div>
                 )}
