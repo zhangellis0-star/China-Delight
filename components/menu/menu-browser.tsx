@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { MobileCartBar } from "@/components/cart/mobile-cart-bar";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
+import { SpecialOffersShowcase } from "@/components/orders/special-offers-showcase";
 import { menuCategories, menuItems } from "@/data/menu";
 import { useCart } from "@/components/cart/cart-provider";
 import type { MenuCategory } from "@/types";
@@ -36,6 +37,7 @@ export function MenuBrowser() {
 
   return (
     <section className={`mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 ${count > 0 ? "pb-28 lg:pb-8" : ""}`}>
+      <SpecialOffersShowcase className="mb-6" />
       <div className="grid gap-4 rounded-lg border border-red-900/10 bg-white p-4 shadow-warm md:grid-cols-[1fr_280px]">
         <label className="relative block">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
