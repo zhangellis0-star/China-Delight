@@ -24,10 +24,20 @@ import type { AppliedPromo, CheckoutCustomer } from "@/types";
 type CheckoutFormCustomer = CheckoutCustomer;
 type TipChoice = "none" | "18" | "20" | "22" | "custom";
 type CheckoutFieldErrors = Partial<Record<"name" | "phone" | "email", string>>;
+type PublicOffer = {
+  id: string;
+  title: string;
+  description?: string | null;
+  minimumSubtotal: number;
+  rewardItemId: string;
+  rewardItemName: string;
+  rewardQuantity: number;
+};
 type PublicSettings = {
   orderingAllowed: boolean;
   busyMode: "normal" | "busy" | "very_busy";
   soldOutItemIds: string[];
+  specialOffers?: PublicOffer[];
   orderingOverride?: { mode: "normal" | "open" | "paused"; expiresAt: string | null };
   nextBoundary?: { label: string; iso: string };
 };
@@ -62,6 +72,8 @@ export default function CheckoutPage() {
   const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoLoading, setPromoLoading] = useState(false);
+  // Special offers: customers may select at most one (no stacking).
+  const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
   // Recompute the discount against the live subtotal so it always matches what the server will charge.
   const discountAmount = appliedPromo ? computePromoDiscount(baseSubtotal, appliedPromo.discountType, appliedPromo.discountValue) : 0;
   const parsedCustomTip = Number(customTip || 0);
@@ -74,6 +86,9 @@ export default function CheckoutPage() {
   const totals = calculateCart(items, tipAmount, discountAmount);
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const orderingOpen = settings?.orderingAllowed ?? isRestaurantOpen();
+  const specialOffers = settings?.specialOffers ?? [];
+  const selectedOffer = specialOffers.find((offer) => offer.id === selectedOfferId) ?? null;
+  const selectedOfferEligible = selectedOffer ? baseSubtotal >= selectedOffer.minimumSubtotal : false;
   const [loading, setLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<CheckoutFieldErrors>({});
@@ -122,6 +137,13 @@ export default function CheckoutPage() {
       document.removeEventListener("visibilitychange", loadSettings);
     };
   }, []);
+
+  // Drop a chosen offer if the cart no longer qualifies (item removed) or the offer is gone.
+  useEffect(() => {
+    if (!selectedOfferId) return;
+    const offer = specialOffers.find((candidate) => candidate.id === selectedOfferId);
+    if (!offer || baseSubtotal < offer.minimumSubtotal) setSelectedOfferId(null);
+  }, [selectedOfferId, specialOffers, baseSubtotal]);
 
   function applySchedule(dateStr: string, timeStr: string) {
     setPickupDate(dateStr);
@@ -212,7 +234,7 @@ export default function CheckoutPage() {
     const response = await fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customer, items, totals, promoCode: appliedPromo?.code ?? null })
+      body: JSON.stringify({ customer, items, totals, promoCode: appliedPromo?.code ?? null, specialOfferId: selectedOfferEligible ? selectedOfferId : null })
     });
     const data = await response.json();
     if (!response.ok) {
@@ -227,7 +249,10 @@ export default function CheckoutPage() {
       return;
     }
     const storedTotals = { ...totals, promoCode: appliedPromo?.code ?? null };
-    window.localStorage.setItem("china-delight-last-order", JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items, totals: storedTotals, status: "new" }));
+    window.localStorage.setItem(
+      "china-delight-last-order",
+      JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items, totals: storedTotals, status: "new", placedAt: new Date().toISOString() })
+    );
     clearCart();
     router.push(`/confirmation?order=${data.orderNumber}`);
   }
@@ -447,6 +472,44 @@ export default function CheckoutPage() {
             {promoError && <p role="alert" className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{promoError}</p>}
           </div>
 
+          {specialOffers.length > 0 && (
+            <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+              <p className="font-black">Special offers</p>
+              <p className="mt-1 text-sm leading-6 text-stone-700">Pick one special offer to add to your order. Only one offer can be used per order.</p>
+              <div className="mt-3 grid gap-2">
+                {specialOffers.map((offer) => {
+                  const eligible = baseSubtotal >= offer.minimumSubtotal;
+                  const selected = selectedOfferId === offer.id;
+                  const remaining = Math.max(0, offer.minimumSubtotal - baseSubtotal);
+                  return (
+                    <button
+                      key={offer.id}
+                      type="button"
+                      disabled={!eligible && !selected}
+                      onClick={() => setSelectedOfferId(selected ? null : offer.id)}
+                      className={`focus-ring rounded-md border p-3 text-left ${selected ? "border-china-red bg-red-50" : "border-stone-300 bg-white"} ${!eligible && !selected ? "cursor-not-allowed opacity-60" : ""}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-black">{offer.title}</span>
+                        {selected ? (
+                          <span className="shrink-0 rounded-md bg-china-red px-2 py-0.5 text-xs font-black text-white">Added</span>
+                        ) : eligible ? (
+                          <span className="shrink-0 text-sm font-black text-china-red">Tap to add</span>
+                        ) : null}
+                      </div>
+                      {offer.description && <p className="mt-1 text-sm font-bold text-stone-600">{offer.description}</p>}
+                      {eligible ? (
+                        <p className="mt-1 text-sm font-bold text-green-700">Free: {offer.rewardQuantity > 1 ? `${offer.rewardQuantity} x ` : ""}{offer.rewardItemName}</p>
+                      ) : (
+                        <p className="mt-1 text-sm font-bold text-stone-500">Add {formatPrice(remaining)} more (before tax) to unlock.</p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="rounded-md border border-stone-200 bg-china-paper p-4">
             <p className="font-black">Optional tip</p>
             <p className="mt-1 text-sm leading-6 text-stone-700">No tip is selected by default. Thank you for supporting the staff.</p>
@@ -544,6 +607,15 @@ export default function CheckoutPage() {
                 <span className="font-bold">{formatPrice(item.unitPrice * item.quantity)}</span>
               </div>
             ))}
+            {selectedOffer && selectedOfferEligible && (
+              <div className="flex justify-between gap-3 text-sm">
+                <span>
+                  {selectedOffer.rewardQuantity > 1 ? `${selectedOffer.rewardQuantity} x ` : ""}{selectedOffer.rewardItemName}
+                  <span className="block text-xs font-bold text-green-700">Special offer</span>
+                </span>
+                <span className="font-bold text-green-700">FREE</span>
+              </div>
+            )}
           </div>
           <div className="mt-5 grid gap-2 border-t border-stone-200 pt-4">
             <div className="flex justify-between">

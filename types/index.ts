@@ -63,6 +63,9 @@ export type CartCustomization = {
   // The order_items.unit_price stored already includes this amount; these fields are kept for display.
   extraChargeLabel?: string;
   extraChargeAmount?: number;
+  // Set on a $0 reward line added by a customer-selected special offer (see lib/special-offers.ts).
+  specialOffer?: boolean;
+  specialOfferTitle?: string;
 };
 
 export type CartItem = {

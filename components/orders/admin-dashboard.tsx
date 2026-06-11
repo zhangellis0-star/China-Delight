@@ -10,6 +10,7 @@ import { defaultSize, formatPrice, getItemPrice, hasReviewPrice } from "@/lib/pr
 import { menuItems } from "@/data/menu";
 import { restaurant } from "@/lib/restaurant";
 import { PromoManager } from "@/components/orders/promo-manager";
+import { SpecialOffersManager } from "@/components/orders/special-offers-manager";
 import type { CartCustomization, CartItem, LunchRiceChoice, LunchSideChoice, MenuItem, MenuPriceKey, OrderStatus, PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
 
 type AdminOrder = {
@@ -68,7 +69,7 @@ type AdminOperations = {
   busyExtraMinutes: number;
   nextBoundary: { label: string; iso: string };
 };
-type AdminSection = "orders" | "past-orders" | "summary" | "sold-out" | "ordering" | "busy" | "reports" | "promo" | "settings";
+type AdminSection = "orders" | "past-orders" | "summary" | "sold-out" | "ordering" | "reports" | "promo" | "special-offers" | "settings";
 type KitchenPrintState = {
   status: "printed" | "failed";
   message?: string;
@@ -118,11 +119,11 @@ const filterTabs: Array<{ value: AdminFilter; label: string }> = [
 const adminSections: Array<{ value: AdminSection; label: string }> = [
   { value: "ordering", label: "Online Ordering Status" },
   { value: "orders", label: "Current Orders" },
-  { value: "busy", label: "Busy Mode" },
   { value: "sold-out", label: "Sold Out Items" },
   { value: "reports", label: "Reports / Export" },
   { value: "settings", label: "Settings Info" },
   { value: "promo", label: "Promo Codes" },
+  { value: "special-offers", label: "Special Offers" },
   { value: "summary", label: "Daily Summary" },
   { value: "past-orders", label: "Past Orders" }
 ];
@@ -131,7 +132,6 @@ const pastStatuses: OrderStatus[] = ["picked_up", "completed", "cancelled"];
 const quickStatuses: OrderStatus[] = ["preparing", "ready", "picked_up", "cancelled"];
 const acceptReadyMinuteOptions = [5, 15, 25];
 const kitchenPrintStorageKey = "china-delight-kitchen-print-statuses";
-const seenNewOrdersStorageKey = "china-delight-seen-new-orders";
 const spiceLevels = ["None", "Mild", "Medium", "Hot", "Extra Hot"] as const;
 const sizeLabels: Record<MenuPriceKey, string> = { pint: "Pint", quart: "Quart", combo: "Combo", order: "Order", large: "Large", small: "Small" };
 const lunchRiceChoices: LunchRiceChoice[] = ["Pork Fried Rice", "White Rice"];
@@ -212,16 +212,6 @@ function loadKitchenPrintStatus() {
 function shouldAutoPrintOrder(order: AdminOrder) {
   if (!order.id || order.status !== "new") return false;
   return order.payment_method !== "stripe" || order.payment_status === "paid";
-}
-
-function loadSeenNewOrders() {
-  if (typeof window === "undefined") return new Set<string>();
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(seenNewOrdersStorageKey) ?? "[]") as string[];
-    return new Set(parsed.filter((value) => typeof value === "string"));
-  } catch {
-    return new Set<string>();
-  }
 }
 
 function matchesFilter(order: AdminOrder, filter: AdminFilter) {
@@ -354,7 +344,6 @@ export function AdminDashboard() {
   const editingOrderRef = useRef(false);
   const kitchenPrintStatusRef = useRef<Record<string, KitchenPrintState>>({});
   const autoPrintAttemptedRef = useRef<Set<string>>(new Set());
-  const seenNewOrdersRef = useRef<Set<string>>(new Set());
   const newOrderAlertIntervalRef = useRef<number | null>(null);
   const activeAudioContextsRef = useRef<Set<AudioContext>>(new Set());
   const soundTimeoutsRef = useRef<Set<number>>(new Set());
@@ -368,7 +357,6 @@ export function AdminDashboard() {
     kitchenPrintStatusRef.current = saved;
     setKitchenPrintStatus(saved);
     setPrintStatusLoaded(true);
-    seenNewOrdersRef.current = loadSeenNewOrders();
   }, []);
 
   useEffect(() => {
@@ -408,6 +396,7 @@ export function AdminDashboard() {
     activeAudioContextsRef.current.clear();
   }, []);
 
+  // Play one loud alert burst (three alternating beeps) so it carries in a busy kitchen.
   const playNewOrderSound = useCallback(() => {
     if (muted || audioBlocked) return;
     const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -415,46 +404,55 @@ export function AdminDashboard() {
     try {
       const context = new AudioContextClass();
       activeAudioContextsRef.current.add(context);
-      const beep = () => {
-        const first = context.createOscillator();
-        const second = context.createOscillator();
-        const gain = context.createGain();
-        first.type = "sine";
-        second.type = "sine";
-        first.frequency.value = 880;
-        second.frequency.value = 660;
-        gain.gain.value = 0.08;
-        first.connect(gain);
-        second.connect(gain);
-        gain.connect(context.destination);
-        first.start();
-        first.stop(context.currentTime + 0.16);
-        second.start(context.currentTime + 0.18);
-        second.stop(context.currentTime + 0.34);
+      const playBurst = () => {
+        const tones = [880, 660, 880];
+        const beepDuration = 0.22;
+        const gap = 0.07;
+        tones.forEach((frequency, index) => {
+          const start = context.currentTime + index * (beepDuration + gap);
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          oscillator.type = "square";
+          oscillator.frequency.value = frequency;
+          // Ramp in/out to avoid clicks; 0.6 peak is loud but stays below clipping for one oscillator.
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.6, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + beepDuration);
+          oscillator.connect(gain);
+          gain.connect(context.destination);
+          oscillator.start(start);
+          oscillator.stop(start + beepDuration);
+        });
         setAudioBlocked(false);
         setAudioUnlocked(true);
+        const burstMs = tones.length * (beepDuration + gap) * 1000 + 150;
         const timeoutId = window.setTimeout(() => {
           soundTimeoutsRef.current.delete(timeoutId);
           activeAudioContextsRef.current.delete(context);
           if (context.state !== "closed") context.close().catch(() => undefined);
-        }, 420);
+        }, burstMs);
         soundTimeoutsRef.current.add(timeoutId);
       };
       if (context.state === "suspended") {
-        void context.resume().then(beep).catch(() => {
+        void context.resume().then(playBurst).catch(() => {
           if (!audioUnlocked) setAudioBlocked(true);
           activeAudioContextsRef.current.delete(context);
-          stopNewOrderAlert();
           if (context.state !== "closed") context.close().catch(() => undefined);
         });
       } else {
-        beep();
+        playBurst();
       }
     } catch {
       if (!audioUnlocked) setAudioBlocked(true);
-      stopNewOrderAlert();
     }
-  }, [audioBlocked, audioUnlocked, muted, stopNewOrderAlert]);
+  }, [audioBlocked, audioUnlocked, muted]);
+
+  // Keep the alert repeating on a timer until it is explicitly stopped (order handled / muted).
+  const startNewOrderAlert = useCallback(() => {
+    if (newOrderAlertIntervalRef.current !== null) return;
+    playNewOrderSound();
+    newOrderAlertIntervalRef.current = window.setInterval(playNewOrderSound, 5000);
+  }, [playNewOrderSound]);
 
   function toggleMute() {
     if (audioBlocked || !audioUnlocked) {
@@ -513,6 +511,11 @@ export function AdminDashboard() {
       setRefreshing(true);
       try {
         const response = await fetch("/api/orders");
+        if (response.status === 401) {
+          // Session expired; send the admin back to the login page.
+          window.location.href = "/admin/login";
+          return;
+        }
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Unable to refresh orders.");
         const serverOrders = (data.orders ?? []) as AdminOrder[];
@@ -549,22 +552,19 @@ export function AdminDashboard() {
     });
   }, [orders, query, filter]);
 
+  // Repeat the alert while any order is still "new"; stop as soon as none remain (every
+  // new order accepted/rejected/cancelled) or sound is muted/blocked.
   useEffect(() => {
-    const newOrderNumbers = orders.filter((order) => order.status === "new").map((order) => order.order_number);
-    const unseen = newOrderNumbers.filter((orderNumber) => !seenNewOrdersRef.current.has(orderNumber));
-
-    if (!unseen.length) {
+    const hasNewOrders = orders.some((order) => order.status === "new");
+    if (!hasNewOrders || muted || audioBlocked) {
       stopNewOrderAlert();
       return;
     }
+    startNewOrderAlert();
+  }, [audioBlocked, muted, orders, startNewOrderAlert, stopNewOrderAlert]);
 
-    unseen.forEach((orderNumber) => seenNewOrdersRef.current.add(orderNumber));
-    window.localStorage.setItem(seenNewOrdersStorageKey, JSON.stringify([...seenNewOrdersRef.current].slice(-250)));
-
-    if (!muted && !audioBlocked) {
-      playNewOrderSound();
-    }
-  }, [audioBlocked, muted, orders, playNewOrderSound, stopNewOrderAlert]);
+  // Stop the repeating alert when the dashboard unmounts.
+  useEffect(() => stopNewOrderAlert, [stopNewOrderAlert]);
 
   const todayOrders = useMemo(() => {
     const todayKey = easternDateKey(new Date().toISOString());
@@ -760,9 +760,9 @@ export function AdminDashboard() {
       section === "summary" ? "admin-summary" :
       section === "sold-out" ? "admin-sold-out" :
       section === "ordering" ? "admin-ordering-status" :
-      section === "busy" ? "admin-busy-mode" :
       section === "reports" ? "admin-reports" :
       section === "promo" ? "admin-promo" :
+      section === "special-offers" ? "admin-special-offers" :
       section === "settings" ? "admin-settings" :
       "admin-orders";
     window.requestAnimationFrame(() => document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -1136,8 +1136,7 @@ export function AdminDashboard() {
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {visible.map((order) => {
           const expanded = expandedOrders.has(order.order_number);
-          const itemsToShow = expanded ? order.order_items : order.order_items.slice(0, 3);
-          const remainingItems = Math.max(0, order.order_items.length - itemsToShow.length);
+          const itemCount = order.order_items.reduce((sum, item) => sum + item.quantity, 0);
           const printState = kitchenPrintStatus[order.order_number];
           return (
           <article key={order.order_number} className={`rounded-lg border p-2 shadow-sm ${order.status === "new" ? "border-2 border-china-red bg-red-50 ring-2 ring-china-gold/50" : "border-china-gold/50 bg-white"}`}>
@@ -1153,38 +1152,14 @@ export function AdminDashboard() {
                   <a href={`tel:${order.customer_phone.replace(/\D/g, "")}`} className="font-bold text-stone-800 underline-offset-2 hover:underline">{order.customer_phone}</a>
                   {order.customer_email ? ` | ${order.customer_email}` : ""}
                 </p>
-                <p className="mt-1 text-sm text-stone-600">
-                  {paymentLabel(order.payment_method, order.payment_status)} | Pickup: {pickupLabel(order)}
+                <p className="mt-1 text-sm font-bold text-stone-700">
+                  {order.created_at ? formatPickupDateTime(order.created_at) : "—"} · Total: {formatPrice(order.total)} · {itemCount} item{itemCount === 1 ? "" : "s"}
                 </p>
-                <p className="mt-1 text-sm font-bold text-stone-700">Ready: {readyLabel(order)} | Total: {formatPrice(order.total)}</p>
                 {Number(order.discount_amount ?? 0) > 0 && (
                   <p className="mt-1 text-sm font-bold text-china-red">Promo{order.promo_code ? ` ${order.promo_code}` : ""}: -{formatPrice(Number(order.discount_amount))}</p>
                 )}
-                <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-black">
-                  {order.confirmation_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Confirmation email sent</span>}
-                  {order.confirmation_email_error && (
-                    <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.confirmation_email_error}>
-                      {emailErrorLabel("Confirmation email", order.confirmation_email_error)}
-                    </span>
-                  )}
-                  {order.accepted_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Accepted email sent</span>}
-                  {order.accepted_email_error && (
-                    <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.accepted_email_error}>
-                      {emailErrorLabel("Accepted email", order.accepted_email_error)}
-                    </span>
-                  )}
-                  {order.ready_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Ready email sent</span>}
-                  {order.ready_email_error && (
-                    <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.ready_email_error}>
-                      {emailErrorLabel("Ready email", order.ready_email_error)}
-                    </span>
-                  )}
-                </div>
-                {order.delivery_address && <p className="mt-1 text-stone-600">{order.delivery_address}</p>}
-                {order.customer_notes && (
-                  <p className={`mt-1 rounded-md px-2 py-1 text-sm font-bold ${hasInstructionAlert(order.customer_notes) ? "bg-yellow-100 text-yellow-950" : "text-stone-600"}`}>
-                    Notes: {order.customer_notes}
-                  </p>
+                {order.customer_notes && hasInstructionAlert(order.customer_notes) && (
+                  <p className="mt-1 rounded-md bg-yellow-100 px-2 py-1 text-sm font-bold text-yellow-950">Notes: {order.customer_notes}</p>
                 )}
               </div>
               <div className="grid gap-2 sm:min-w-56">
@@ -1276,28 +1251,62 @@ export function AdminDashboard() {
                 </div>
               </div>
             </div>
-            <div className="mt-3 grid gap-2 border-t border-stone-200 pt-3">
-              {itemsToShow.map((item, index) => (
-                <div
-                  key={`${order.order_number}-${item.item_number}-${index}`}
-                  className={`flex flex-col justify-between gap-1 rounded-md p-2 text-sm sm:flex-row ${
-                    hasInstructionAlert(`${customizationText(item.customization)} ${String(item.customization?.notes ?? "")}`) ? "bg-yellow-100 text-yellow-950" : "bg-china-paper"
-                  }`}
-                >
-                  <span>
-                    <strong>
-                      {item.quantity} x #{item.item_number} {item.item_name}
-                    </strong>
-                    {customizationText(item.customization) && <span className="block text-sm text-stone-600">{customizationText(item.customization)}</span>}
-                    {item.customization?.notes ? <span className="block text-sm font-bold text-stone-700">Notes: {String(item.customization.notes)}</span> : null}
-                  </span>
-                  <span className="font-bold">{formatPrice(item.unit_price * item.quantity)}</span>
+            <div className="mt-3 border-t border-stone-200 pt-3">
+              <button
+                onClick={() => toggleExpanded(order.order_number)}
+                aria-expanded={expanded}
+                className="focus-ring min-h-10 w-full rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800"
+              >
+                {expanded ? "Hide order details" : "View order details"}
+              </button>
+              {expanded && (
+                <div className="mt-3 grid gap-2">
+                  <p className="text-sm text-stone-600">{paymentLabel(order.payment_method, order.payment_status)} | Pickup: {pickupLabel(order)}</p>
+                  <p className="text-sm font-bold text-stone-700">Ready: {readyLabel(order)}</p>
+                  {order.delivery_address && <p className="text-sm text-stone-600">{order.delivery_address}</p>}
+                  {order.customer_notes && (
+                    <p className={`rounded-md px-2 py-1 text-sm font-bold ${hasInstructionAlert(order.customer_notes) ? "bg-yellow-100 text-yellow-950" : "text-stone-600"}`}>
+                      Notes: {order.customer_notes}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-1 text-[11px] font-black">
+                    {order.confirmation_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Confirmation email sent</span>}
+                    {order.confirmation_email_error && (
+                      <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.confirmation_email_error}>
+                        {emailErrorLabel("Confirmation email", order.confirmation_email_error)}
+                      </span>
+                    )}
+                    {order.accepted_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Accepted email sent</span>}
+                    {order.accepted_email_error && (
+                      <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.accepted_email_error}>
+                        {emailErrorLabel("Accepted email", order.accepted_email_error)}
+                      </span>
+                    )}
+                    {order.ready_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Ready email sent</span>}
+                    {order.ready_email_error && (
+                      <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.ready_email_error}>
+                        {emailErrorLabel("Ready email", order.ready_email_error)}
+                      </span>
+                    )}
+                  </div>
+                  {order.order_items.map((item, index) => (
+                    <div
+                      key={`${order.order_number}-${item.item_number}-${index}`}
+                      className={`flex flex-col justify-between gap-1 rounded-md p-2 text-sm sm:flex-row ${
+                        hasInstructionAlert(`${customizationText(item.customization)} ${String(item.customization?.notes ?? "")}`) ? "bg-yellow-100 text-yellow-950" : "bg-china-paper"
+                      }`}
+                    >
+                      <span>
+                        <strong>
+                          {item.quantity} x #{item.item_number} {item.item_name}
+                        </strong>
+                        {customizationText(item.customization) && <span className="block text-sm text-stone-600">{customizationText(item.customization)}</span>}
+                        {item.customization?.notes ? <span className="block text-sm font-bold text-stone-700">Notes: {String(item.customization.notes)}</span> : null}
+                      </span>
+                      <span className="font-bold">{formatPrice(item.unit_price * item.quantity)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {(remainingItems > 0 || expanded) && (
-                <button onClick={() => toggleExpanded(order.order_number)} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
-                  {expanded ? "Hide details" : `Show ${remainingItems} more item${remainingItems === 1 ? "" : "s"}`}
-                </button>
               )}
             </div>
           </article>
@@ -1306,25 +1315,7 @@ export function AdminDashboard() {
         {visible.length === 0 && <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-8 text-center font-bold">No orders found.</div>}
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <div id="admin-busy-mode" className="scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-4 shadow-sm">
-          <p className="font-black text-china-red">Busy Mode</p>
-          <p className="mt-1 text-sm font-bold text-stone-700">Ready-time suggestions add {operations?.busyExtraMinutes ?? 0} minutes.</p>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {(["normal", "busy", "very_busy"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => updateOperations({ busyMode: mode })}
-                className={`focus-ring min-h-10 rounded-md border px-2 text-sm font-black ${
-                  operations?.settings.busyMode === mode ? "border-china-red bg-china-red text-white" : "border-china-gold/70 bg-white text-stone-800"
-                }`}
-              >
-                {mode === "very_busy" ? "Very busy" : mode === "busy" ? "Busy" : "Normal"}
-              </button>
-            ))}
-          </div>
-        </div>
-
+      <div className="mt-6 grid gap-4">
         <div id="admin-sold-out" className="scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-4 shadow-sm">
           <p className="font-black text-china-red">Sold Out Today</p>
           <div className="mt-3 grid gap-2">
@@ -1395,6 +1386,8 @@ export function AdminDashboard() {
       </div>
 
       <PromoManager />
+
+      <SpecialOffersManager />
 
       <div id="admin-summary" className="mt-6 grid scroll-mt-24 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[

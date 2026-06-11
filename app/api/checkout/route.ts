@@ -6,6 +6,7 @@ import { getOperationalSettings, orderingAllowed } from "@/lib/operations";
 import { calculateCart, customizationUpcharge, getItemPrice, hasReviewPrice } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode, validatePromo } from "@/lib/promo";
 import { addonPrices, restaurant } from "@/lib/restaurant";
+import { buildFreeOfferItem, getSpecialOffers, isOfferEligible } from "@/lib/special-offers";
 import { getSupabaseAdmin, getSupabaseEnvStatus } from "@/lib/supabase-server";
 import { sendNewOrderTelegramNotification } from "@/lib/telegram";
 import type { CartCustomization, CartItem, CartTotals, CheckoutCustomer } from "@/types";
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
     items: CartItem[];
     totals: CartTotals;
     promoCode?: string | null;
+    specialOfferId?: string | null;
   };
 
   if (!body.customer?.name || !body.customer?.phone || !body.customer?.email || !body.items?.length) {
@@ -151,6 +153,20 @@ export async function POST(request: Request) {
     promoRecord = promo;
     promoCode = code;
     discountAmount = computePromoDiscount(subtotal, promo.discount_type, promo.discount_value);
+  }
+
+  // Special offer (max one per order). The reward is a $0 line item, so it never changes the
+  // subtotal/tax/total and can never make the total negative. Apply only when truly eligible;
+  // an ineligible or unknown id is silently ignored (no money impact, order still valid).
+  if (body.specialOfferId) {
+    const offers = await getSpecialOffers();
+    const offer = offers.find((candidate) => candidate.id === body.specialOfferId);
+    if (offer && isOfferEligible(offer, subtotal)) {
+      const freeItem = buildFreeOfferItem(offer);
+      if (freeItem) items.push(freeItem);
+    } else {
+      console.warn("[checkout] Special offer not applied", { orderNumber, specialOfferId: body.specialOfferId, subtotal });
+    }
   }
 
   const finalTotals = calculateCart(items, tip, discountAmount);
