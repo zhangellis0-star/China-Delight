@@ -100,6 +100,10 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
   return (
     <section className="receipt-ticket mx-auto max-w-2xl bg-white px-4 py-8 text-black print:p-0">
       <style jsx global>{`
+        .receipt-ticket,
+        .receipt-ticket * {
+          font-family: Arial, Helvetica, sans-serif;
+        }
         @media print {
           @page {
             size: 80mm auto;
