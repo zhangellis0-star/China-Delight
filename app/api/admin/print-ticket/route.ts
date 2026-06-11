@@ -14,7 +14,9 @@ export const dynamic = "force-dynamic";
 // ESC/POS over a raw TCP socket (port 9100). Override with PRINTER_IP / PRINTER_PORT.
 const printerHost = process.env.PRINTER_IP?.trim() || "192.168.1.172";
 const printerPort = Number(process.env.PRINTER_PORT) || 9100;
-const lineWidth = 42;
+// 80mm thermal paper fits 48 Font-A columns; use the full width so the ticket
+// fills the paper instead of leaving a wide blank margin on the right.
+const lineWidth = 48;
 
 type PrintOrder = {
   order_number: string;
@@ -70,12 +72,6 @@ function wrapLine(value: string, width = lineWidth) {
   return lines.length ? lines : [""];
 }
 
-function center(value: string) {
-  const clean = text(value).slice(0, lineWidth);
-  const left = Math.max(0, Math.floor((lineWidth - clean.length) / 2));
-  return `${" ".repeat(left)}${clean}`;
-}
-
 function moneyLine(label: string, value: number) {
   const left = text(label);
   const right = formatPrice(value);
@@ -90,81 +86,111 @@ function pickupText(order: PrintOrder) {
   return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
 }
 
-function ticketLines(order: PrintOrder) {
-  const lines: string[] = [];
-  const divider = "-".repeat(lineWidth);
-  const doubleDivider = "=".repeat(lineWidth);
+// Customization lines for one item. Reuses the shared customizationParts logic
+// but drops the default "Size: order" (a plain a-la-carte order with no real size
+// choice) so unmodified items don't print a noisy, meaningless modifiers section.
+function ticketModifiers(customization?: Record<string, unknown> | null) {
+  return customizationParts(customization ?? {}).filter((part) => part.trim().toLowerCase() !== "size: order");
+}
 
-  lines.push(center("CHINA DELIGHT"));
-  lines.push(center("KITCHEN / PICKUP TICKET"));
-  lines.push(doubleDivider);
-  lines.push(center(`#${order.order_number}`));
-  lines.push(center(paymentBanner(order)));
-  lines.push(doubleDivider);
-  lines.push(`NAME: ${text(order.customer_name)}`);
-  lines.push(`PHONE: ${text(order.customer_phone)}`);
-  lines.push(`PICKUP: ${text(pickupText(order))}`);
-  if (order.estimated_ready_at) lines.push(`READY: ${text(formatPickupDateTime(order.estimated_ready_at))}`);
-  lines.push(`PAYMENT: ${paymentBanner(order)}`);
-  lines.push(`STATUS: ${text(order.status).toUpperCase()}`);
-  if (order.customer_notes) {
-    lines.push(divider);
-    lines.push("ORDER NOTES:");
-    lines.push(...wrapLine(order.customer_notes.toUpperCase()));
-  }
-  lines.push(doubleDivider);
+// ESC/POS control sequences. Character size is GS ! n where the high nibble is the
+// width multiplier and the low nibble the height multiplier (0 = 1x, 1 = 2x).
+const ESC = 0x1b;
+const GS = 0x1d;
+const cmd = {
+  init: Buffer.from([ESC, 0x40]),
+  alignLeft: Buffer.from([ESC, 0x61, 0x00]),
+  alignCenter: Buffer.from([ESC, 0x61, 0x01]),
+  boldOn: Buffer.from([ESC, 0x45, 0x01]),
+  boldOff: Buffer.from([ESC, 0x45, 0x00]),
+  sizeNormal: Buffer.from([GS, 0x21, 0x00]),
+  sizeTall: Buffer.from([GS, 0x21, 0x01]), // Double height (same width, so 48 cols still fit).
+  sizeLarge: Buffer.from([GS, 0x21, 0x11]), // Double height + double width.
+  cut: Buffer.from([GS, 0x56, 0x42, 0x00]) // Partial cut.
+};
 
-  for (const item of order.order_items ?? []) {
-    const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${item.item_name}`;
-    lines.push(...wrapLine(itemTitle.toUpperCase()));
-    lines.push(`  ${formatPrice(Number(item.unit_price || 0))} each`);
-    const modifiers = customizationParts(item.customization ?? {});
-    if (modifiers.length) {
-      lines.push("  MODIFIERS:");
-      for (const part of modifiers) {
-        lines.push(...wrapLine(`    - ${part}`));
-      }
-    }
-    const notes = item.customization?.notes;
-    if (notes) {
-      lines.push("  SPECIAL NOTES:");
-      lines.push(...wrapLine(`    ${String(notes).toUpperCase()}`));
-    }
-    lines.push(divider);
-  }
-
-  lines.push(moneyLine("Subtotal", Number(order.subtotal || 0)));
-  if (Number(order.discount_amount ?? 0) > 0) {
-    lines.push(moneyLine(`Promo${order.promo_code ? ` ${order.promo_code}` : ""}`, -Number(order.discount_amount ?? 0)));
-  }
-  lines.push(moneyLine("Tax", Number(order.tax || 0)));
-  lines.push(moneyLine("Processing fee", Number(order.processing_fee ?? 0)));
-  lines.push(moneyLine("Tip", Number(order.tip_amount ?? 0)));
-  lines.push(doubleDivider);
-  lines.push(moneyLine("TOTAL", Number(order.total || 0)));
-
-  return lines;
+function feed(lines: number) {
+  return Buffer.from([ESC, 0x64, Math.max(0, lines)]); // ESC d n: print and feed n lines.
 }
 
 function escposTicket(order: PrintOrder) {
-  const bodyLines = ticketLines(order).slice(6);
+  const divider = "-".repeat(lineWidth);
+  const doubleDivider = "=".repeat(lineWidth);
+  const chunks: Buffer[] = [cmd.init];
+  const line = (value: string) => chunks.push(Buffer.from(`${value}\n`, "ascii"));
+  const wrapped = (value: string, indent = 0) => {
+    const pad = " ".repeat(indent);
+    for (const part of wrapLine(value, lineWidth - indent)) line(`${pad}${part}`);
+  };
 
-  return Buffer.concat([
-    Buffer.from([0x1b, 0x40]), // Initialize printer.
-    Buffer.from([0x1b, 0x61, 0x01]), // Center.
-    Buffer.from([0x1b, 0x45, 0x01]), // Bold on.
-    Buffer.from(`${center("CHINA DELIGHT")}\n`, "ascii"),
-    Buffer.from("KITCHEN / PICKUP TICKET\n", "ascii"),
-    Buffer.from([0x1d, 0x21, 0x11]), // Double width + double height.
-    Buffer.from(`#${text(order.order_number)}\n`, "ascii"),
-    Buffer.from([0x1d, 0x21, 0x00]), // Normal size.
-    Buffer.from(`${paymentBanner(order)}\n`, "ascii"),
-    Buffer.from([0x1b, 0x45, 0x00]), // Bold off.
-    Buffer.from([0x1b, 0x61, 0x00]), // Left.
-    Buffer.from(bodyLines.join("\n"), "ascii"),
-    Buffer.from([0x0a, 0x0a, 0x0a]),
-    Buffer.from([0x1d, 0x56, 0x42, 0x00]) // Partial cut.
-  ]);
+  // Header: hardware-centered so the big title stays centered at any font size.
+  chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeLarge);
+  line("CHINA DELIGHT");
+  chunks.push(cmd.sizeNormal);
+  line("Kitchen / Pickup Ticket");
+  chunks.push(cmd.boldOff);
+  line(doubleDivider);
+  chunks.push(cmd.boldOn, cmd.sizeLarge);
+  line(`#${text(order.order_number)}`);
+  chunks.push(cmd.sizeTall);
+  line(paymentBanner(order));
+  chunks.push(cmd.sizeNormal, cmd.boldOff);
+  line(doubleDivider);
+
+  // Customer info, left aligned. Name/phone/pickup are enlarged for quick reads.
+  chunks.push(cmd.alignLeft, cmd.boldOn, cmd.sizeTall);
+  line(`NAME: ${text(order.customer_name)}`);
+  line(`PHONE: ${text(order.customer_phone)}`);
+  line(`PICKUP: ${text(pickupText(order))}`);
+  chunks.push(cmd.sizeNormal);
+  if (order.estimated_ready_at) line(`READY: ${text(formatPickupDateTime(order.estimated_ready_at))}`);
+  chunks.push(cmd.boldOff);
+  line(`PAYMENT: ${paymentBanner(order)}`);
+  line(`STATUS: ${text(order.status).toUpperCase()}`);
+
+  if (order.customer_notes) {
+    line(divider);
+    chunks.push(cmd.boldOn);
+    line("ORDER NOTES:");
+    wrapped(text(order.customer_notes).toUpperCase());
+    chunks.push(cmd.boldOff);
+  }
+  line(doubleDivider);
+
+  // Items: each name printed large and bold; modifiers/notes only when present.
+  for (const item of order.order_items ?? []) {
+    const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${item.item_name}`;
+    chunks.push(cmd.boldOn, cmd.sizeTall);
+    wrapped(itemTitle.toUpperCase());
+    chunks.push(cmd.sizeNormal, cmd.boldOff);
+    line(`   ${formatPrice(Number(item.unit_price || 0))} each`);
+    for (const part of ticketModifiers(item.customization)) {
+      wrapped(`- ${part.toUpperCase()}`, 3);
+    }
+    const notes = item.customization?.notes;
+    if (notes) {
+      chunks.push(cmd.boldOn);
+      wrapped(`* SPECIAL: ${String(notes).toUpperCase()}`, 3);
+      chunks.push(cmd.boldOff);
+    }
+    line(divider);
+  }
+
+  // Totals: full-width money lines; grand total enlarged.
+  line(moneyLine("Subtotal", Number(order.subtotal || 0)));
+  if (Number(order.discount_amount ?? 0) > 0) {
+    line(moneyLine(`Promo${order.promo_code ? ` ${order.promo_code}` : ""}`, -Number(order.discount_amount ?? 0)));
+  }
+  line(moneyLine("Tax", Number(order.tax || 0)));
+  line(moneyLine("Processing fee", Number(order.processing_fee ?? 0)));
+  line(moneyLine("Tip", Number(order.tip_amount ?? 0)));
+  line(doubleDivider);
+  chunks.push(cmd.boldOn, cmd.sizeTall);
+  line(moneyLine("TOTAL", Number(order.total || 0)));
+  chunks.push(cmd.sizeNormal, cmd.boldOff);
+
+  chunks.push(feed(4), cmd.cut);
+  return Buffer.concat(chunks);
 }
 
 function sendToPrinter(payload: Buffer) {
