@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useCart } from "@/components/cart/cart-provider";
+import { SpecialOffersShowcase } from "@/components/orders/special-offers-showcase";
 import { customizationText } from "@/lib/order-display";
 import { closedOrderingMessage, isRestaurantOpen, nextOpeningLabel } from "@/lib/order-rules";
 import { calculateCart, formatPrice } from "@/lib/pricing";
@@ -85,7 +86,9 @@ export default function CartPage() {
             ))}
           </div>
 
-          <aside className="h-fit rounded-lg border border-stone-200 bg-white p-5 shadow-warm">
+          <aside className="grid h-fit gap-4">
+            <SpecialOffersShowcase heading="Unlock a free item" />
+            <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-warm">
             <h2 className="text-2xl font-black">Order total</h2>
             <div className="mt-5 grid gap-3 text-lg">
               <div className="flex justify-between">
@@ -119,6 +122,7 @@ export default function CartPage() {
                 Checkout unavailable
               </span>
             )}
+            </div>
           </aside>
           <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-gold/50 bg-[#fff7e8]/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-12px_34px_rgba(44,24,16,0.24)] backdrop-blur lg:hidden">
             {orderingOpen ? (

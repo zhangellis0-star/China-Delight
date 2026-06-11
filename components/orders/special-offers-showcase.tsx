@@ -1,0 +1,78 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Gift } from "lucide-react";
+import { useCart } from "@/components/cart/cart-provider";
+import { calculateCart, formatPrice } from "@/lib/pricing";
+
+type PublicOffer = {
+  id: string;
+  title: string;
+  description?: string | null;
+  minimumSubtotal: number;
+  rewardItemId: string;
+  rewardItemName: string;
+  rewardQuantity: number;
+};
+
+// Customer-facing special offers with a live progress bar toward each offer's threshold.
+// It reads the global cart, so the "$X away" message and the bar update everywhere the
+// component is shown (homepage, menu/order, cart) as items are added or removed.
+export function SpecialOffersShowcase({ heading = "Special offers", className = "" }: { heading?: string; className?: string }) {
+  const { items } = useCart();
+  const subtotal = calculateCart(items).subtotal;
+  const [offers, setOffers] = useState<PublicOffer[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/settings", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data: { specialOffers?: PublicOffer[] }) => {
+        if (active) setOffers(data.specialOffers ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!offers.length) return null;
+
+  return (
+    <section className={`rounded-lg border border-china-gold/60 bg-[#fffaf0] p-5 shadow-sm ${className}`}>
+      <div className="flex items-center gap-2 text-china-red">
+        <Gift className="h-5 w-5" />
+        <h2 className="text-xl font-black">{heading}</h2>
+      </div>
+      <div className="mt-4 grid gap-4">
+        {offers.map((offer) => {
+          const threshold = Math.max(0, offer.minimumSubtotal);
+          const unlocked = subtotal >= threshold;
+          const remaining = Math.max(0, threshold - subtotal);
+          const pct = threshold > 0 ? Math.min(100, Math.round((subtotal / threshold) * 100)) : 100;
+          const rewardLabel = `${offer.rewardQuantity > 1 ? `${offer.rewardQuantity} x ` : ""}${offer.rewardItemName}`;
+          return (
+            <div key={offer.id} className="rounded-md border border-china-gold/50 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-black text-stone-900">{offer.title}</p>
+                <span className={`rounded-md px-2 py-0.5 text-xs font-black uppercase ${unlocked ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}`}>
+                  {unlocked ? "Unlocked" : `Spend ${formatPrice(threshold)}`}
+                </span>
+              </div>
+              <p className="mt-1 text-sm font-bold text-green-700">Free: {rewardLabel}</p>
+              {offer.description && <p className="mt-1 text-sm text-stone-600">{offer.description}</p>}
+              <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                <div className={`h-full rounded-full transition-all ${unlocked ? "bg-china-green" : "bg-china-gold"}`} style={{ width: `${pct}%` }} />
+              </div>
+              <p className={`mt-2 text-sm font-black ${unlocked ? "text-china-green" : "text-stone-700"}`}>
+                {unlocked
+                  ? `Unlocked! Add your free ${offer.rewardItemName} at checkout.`
+                  : `You are ${formatPrice(remaining)} away from unlocking ${offer.title}.`}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}

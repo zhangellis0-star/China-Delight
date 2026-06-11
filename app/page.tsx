@@ -4,6 +4,7 @@ import { MapPin, Phone, Star } from "lucide-react";
 import { ButtonLink } from "@/components/button-link";
 import { DeliveryPlatforms } from "@/components/delivery-platforms";
 import { MenuItemCard } from "@/components/menu/menu-item-card";
+import { SpecialOffersShowcase } from "@/components/orders/special-offers-showcase";
 import { menuItems } from "@/data/menu";
 import { restaurant } from "@/lib/restaurant";
 
@@ -74,6 +75,12 @@ export default function HomePage() {
       <div className="bg-[#f5fbf5]">
         <DeliveryPlatforms />
       </div>
+
+      <section className="bg-[#f5fbf5]">
+        <div className="mx-auto max-w-7xl px-4 pb-4 sm:px-6 lg:px-8">
+          <SpecialOffersShowcase heading="Today's special offers" />
+        </div>
+      </section>
 
       <section className="bg-[#f5fbf5]">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">

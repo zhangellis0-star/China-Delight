@@ -333,6 +333,10 @@ export function AdminDashboard() {
   const [editingOrder, setEditingOrder] = useState<EditOrderState | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [creatingTestOrder, setCreatingTestOrder] = useState(false);
+  const [dailyReportBusy, setDailyReportBusy] = useState(false);
+  const [toolMessage, setToolMessage] = useState<string | null>(null);
+  const dailyReportAutoRef = useRef(false);
   const [networkPrintingOrders, setNetworkPrintingOrders] = useState<Set<string>>(new Set());
   const [kitchenPrintStatus, setKitchenPrintStatus] = useState<Record<string, KitchenPrintState>>({});
   const [printStatusLoaded, setPrintStatusLoaded] = useState(false);
@@ -451,7 +455,9 @@ export function AdminDashboard() {
   const startNewOrderAlert = useCallback(() => {
     if (newOrderAlertIntervalRef.current !== null) return;
     playNewOrderSound();
-    newOrderAlertIntervalRef.current = window.setInterval(playNewOrderSound, 5000);
+    // Repeat fairly often (every 2.5s) so staff notice quickly; the alert stops as soon as
+    // every new order is handled (see the effect that calls stopNewOrderAlert).
+    newOrderAlertIntervalRef.current = window.setInterval(playNewOrderSound, 2500);
   }, [playNewOrderSound]);
 
   function toggleMute() {
@@ -972,6 +978,74 @@ export function AdminDashboard() {
     router.refresh();
   }
 
+  async function createTestOrder() {
+    setCreatingTestOrder(true);
+    setToolMessage(null);
+    try {
+      const response = await fetch("/api/admin/test-order", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not create test order.");
+      setToolMessage(`Test order ${data.orderNumber} created. It is marked TEST and can be kitchen-printed like a real order.`);
+      await loadOrders({ manual: true });
+    } catch (error) {
+      setToolMessage(error instanceof Error ? error.message : "Could not create test order.");
+    } finally {
+      setCreatingTestOrder(false);
+    }
+  }
+
+  const printDailyReport = useCallback(async (options: { auto?: boolean } = {}) => {
+    setDailyReportBusy(true);
+    if (!options.auto) setToolMessage(null);
+    try {
+      const response = await fetch("/api/admin/daily-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options.auto ? { auto: true } : { force: true })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Daily report print failed.");
+      if (data.skipped) {
+        if (!options.auto) setToolMessage("Daily report was already printed today.");
+      } else {
+        setToolMessage(`Daily report printed${data.summary ? ` (${data.summary.totalOrders} orders, total ${formatPrice(data.summary.grandTotal)})` : ""}.`);
+      }
+      return true;
+    } catch (error) {
+      setToolMessage(error instanceof Error ? error.message : "Daily report print failed.");
+      return false;
+    } finally {
+      setDailyReportBusy(false);
+    }
+  }, []);
+
+  // Auto-print the daily report at/after 10:00 PM Eastern, once per calendar day. A localStorage
+  // marker (per device) plus the server-side dedupe guard prevent duplicate prints.
+  useEffect(() => {
+    const storageKey = "china-delight-daily-report-date";
+    function easternHour() {
+      return Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hourCycle: "h23" }).format(new Date()));
+    }
+    function easternDay() {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    }
+    function checkAutoPrint() {
+      if (dailyReportAutoRef.current) return;
+      if (easternHour() < 22) return;
+      const todayKey = easternDay();
+      if (window.localStorage.getItem(storageKey) === todayKey) return;
+      dailyReportAutoRef.current = true;
+      // Mark attempted up-front so a printer error doesn't cause repeated retries all night.
+      window.localStorage.setItem(storageKey, todayKey);
+      void printDailyReport({ auto: true }).finally(() => {
+        dailyReportAutoRef.current = false;
+      });
+    }
+    checkAutoPrint();
+    const timer = window.setInterval(checkAutoPrint, 60000);
+    return () => window.clearInterval(timer);
+  }, [printDailyReport]);
+
   const currentEditTotals = editedTotals(editingOrder);
   const draftMenuItem = newItemDraft ? menuItems.find((candidate) => candidate.id === newItemDraft.menuItemId) ?? null : null;
   const addSearchResults = (() => {
@@ -1014,20 +1088,6 @@ export function AdminDashboard() {
         {refreshError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{refreshError}</span>}
         {operationsError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{operationsError}</span>}
         {audioBlocked && !muted && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">Browser blocked sound. Click Enable sound once to allow alerts.</span>}
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          ["Orders today", dailySummary.totalOrders],
-          ["Revenue today", formatPrice(dailySummary.totalSales)],
-          ["Pay-at-pickup", formatPrice(dailySummary.cashSales)],
-          ["Stripe paid", formatPrice(dailySummary.stripeSales)]
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-4 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-china-red">{label}</p>
-            <p className="mt-1 text-2xl font-black text-stone-950">{value}</p>
-          </div>
-        ))}
       </div>
 
       <div className="mt-5 lg:hidden">
@@ -1118,6 +1178,24 @@ export function AdminDashboard() {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, order number, or item" className="focus-ring h-14 w-full rounded-md border border-china-gold/70 bg-white pl-12 pr-4 text-lg" />
         </label>
         <p className="text-xs font-bold text-stone-600">Kitchen tickets print to the local Epson printer. New orders auto-print once while this page is open.</p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={createTestOrder}
+            disabled={creatingTestOrder}
+            className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {creatingTestOrder ? "Creating test order..." : "Create test order"}
+          </button>
+          <button
+            onClick={() => printDailyReport()}
+            disabled={dailyReportBusy}
+            className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {dailyReportBusy ? "Printing report..." : "Print daily report"}
+          </button>
+        </div>
+        <p className="text-xs font-bold text-stone-600">The daily report also prints automatically at 10:00 PM. Test orders are clearly marked TEST and excluded from report totals.</p>
+        {toolMessage && <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{toolMessage}</p>}
       </div>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
         {filterTabs.map((tab) => (
@@ -1138,12 +1216,14 @@ export function AdminDashboard() {
           const expanded = expandedOrders.has(order.order_number);
           const itemCount = order.order_items.reduce((sum, item) => sum + item.quantity, 0);
           const printState = kitchenPrintStatus[order.order_number];
+          const isTestOrder = order.order_number.toUpperCase().startsWith("TEST");
           return (
-          <article key={order.order_number} className={`rounded-lg border p-2 shadow-sm ${order.status === "new" ? "border-2 border-china-red bg-red-50 ring-2 ring-china-gold/50" : "border-china-gold/50 bg-white"}`}>
+          <article key={order.order_number} className={`rounded-lg border p-2 shadow-sm ${isTestOrder ? "border-2 border-dashed border-purple-400 bg-purple-50" : order.status === "new" ? "border-2 border-china-red bg-red-50 ring-2 ring-china-gold/50" : "border-china-gold/50 bg-white"}`}>
             <div className="flex flex-col justify-between gap-2 lg:flex-row">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-black text-china-red">{order.order_number}</p>
+                  {isTestOrder && <span className="rounded-md bg-purple-600 px-2 py-1 text-xs font-black uppercase text-white">TEST</span>}
                   <span className={`rounded-md border px-2 py-1 text-xs font-black uppercase ${statusStyles[order.status]}`}>{statusLabel(order.status)}</span>
                   {order.status === "new" && <span className="rounded-md bg-china-gold px-2 py-1 text-xs font-black uppercase text-china-ink">New Order</span>}
                 </div>

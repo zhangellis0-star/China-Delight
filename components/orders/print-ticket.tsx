@@ -153,7 +153,7 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
         <p className="mt-1 text-center text-xs font-bold print:text-[9pt]">{restaurant.phone}</p>
         <p className="text-center text-xs font-bold print:text-[9pt]">{restaurant.address}</p>
         <p className="mt-2 text-center text-sm font-bold">Kitchen / Pickup Ticket</p>
-        <p className="receipt-line mt-3 text-center text-4xl font-black leading-tight print:text-[24pt]">#{order.order_number}</p>
+        <p className="receipt-line mt-3 text-center text-2xl font-black leading-tight print:text-[16pt]">#{order.order_number}</p>
         <div className="receipt-break mt-4 grid gap-1 border-y-2 border-black py-3 text-base print:text-[11pt]">
           <p className="receipt-line">
             <strong>Name:</strong> {order.customer_name}
