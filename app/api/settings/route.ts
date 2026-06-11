@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { busyExtraMinutes, getOperationalSettings, operationalBoundary, orderingAllowed } from "@/lib/operations";
+import { getActivePublicOffers } from "@/lib/special-offers";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,12 +13,14 @@ const noStoreHeaders = {
 
 export async function GET() {
   const settings = await getOperationalSettings();
+  const specialOffers = await getActivePublicOffers();
   return NextResponse.json({
     orderingAllowed: orderingAllowed(settings),
     orderingOverride: settings.orderingOverride,
     busyMode: settings.busyMode,
     busyExtraMinutes: busyExtraMinutes(settings.busyMode),
     soldOutItemIds: settings.soldOutItemIds,
+    specialOffers,
     nextBoundary: operationalBoundary(settings)
   }, {
     headers: noStoreHeaders

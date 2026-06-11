@@ -7,8 +7,10 @@ export function customizationParts(customization?: Partial<CartCustomization> | 
   const addOns = Array.isArray(customization.addOns) ? customization.addOns : [];
   const extraChargeAmount = Number((customization as { extraChargeAmount?: unknown }).extraChargeAmount ?? 0);
   const extraChargeLabel = typeof customization.extraChargeLabel === "string" ? customization.extraChargeLabel : "";
+  const isSpecialOffer = Boolean((customization as { specialOffer?: unknown }).specialOffer);
 
   return [
+    isSpecialOffer ? "FREE (special offer)" : "",
     customization.size ? `Size: ${customization.size}` : "",
     customization.lunchRice ? `Lunch rice: ${customization.lunchRice}` : "",
     customization.lunchSide ? `Lunch side: ${customization.lunchSide}` : "",
