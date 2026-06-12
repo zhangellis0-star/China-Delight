@@ -38,7 +38,11 @@ type PrintOrder = {
 };
 
 function pickupText(order: PrintOrder) {
-  return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
+  return isScheduled(order) ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
+}
+
+function isScheduled(order: PrintOrder) {
+  return Boolean(order.scheduled_pickup_time) && (!order.pickup_time_type || order.pickup_time_type === "scheduled");
 }
 
 function isTestOrder(order: PrintOrder) {
@@ -90,10 +94,21 @@ function escposTicket(order: PrintOrder) {
   line(`NAME: ${text(order.customer_name)}`);
   line(`PHONE: ${text(order.customer_phone)}`);
   chunks.push(cmd.sizeNormal);
-  line(`PICKUP: ${text(pickupText(order))}`);
   chunks.push(cmd.boldOff);
+  if (isScheduled(order)) {
+    line(doubleDivider);
+    chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeTall);
+    line("SCHEDULED PICKUP:");
+    wrapped(text(pickupText(order)).toUpperCase());
+    chunks.push(cmd.sizeNormal, cmd.boldOff, cmd.alignLeft);
+    line(doubleDivider);
+  } else {
+    chunks.push(cmd.boldOn);
+    line(`PICKUP: ${text(pickupText(order))}`);
+    chunks.push(cmd.boldOff);
+  }
   if (order.created_at) line(`ORDERED: ${text(formatPickupDateTime(order.created_at))}`);
-  if (order.estimated_ready_at) line(`READY: ${text(formatPickupDateTime(order.estimated_ready_at))}`);
+  if (!isScheduled(order) && order.estimated_ready_at) line(`READY: ${text(formatPickupDateTime(order.estimated_ready_at))}`);
 
   if (order.customer_notes) {
     line(divider);

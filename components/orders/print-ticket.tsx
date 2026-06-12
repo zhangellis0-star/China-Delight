@@ -25,6 +25,10 @@ type TicketOrder = {
   customer_phone: string;
   customer_email?: string | null;
   customer_notes?: string | null;
+  pickup_time_type?: string | null;
+  pickup_time?: string | null;
+  scheduled_pickup_time?: string | null;
+  estimated_ready_at?: string | null;
   status: OrderStatus;
   created_at?: string | null;
   subtotal: number;
@@ -48,7 +52,7 @@ function localTicket(orderNumber: string): TicketOrder | null {
   if (!saved) return null;
   const parsed = JSON.parse(saved) as {
     orderNumber: string;
-    customer: { name: string; phone: string; email?: string; notes?: string };
+    customer: { name: string; phone: string; email?: string; notes?: string; pickupTimeType?: string; scheduledPickupTime?: string };
     items: CartItem[];
     totals: { subtotal: number; discount?: number; tax: number; processingFee?: number; tip?: number; total: number; promoCode?: string | null };
     status: OrderStatus;
@@ -61,6 +65,8 @@ function localTicket(orderNumber: string): TicketOrder | null {
     customer_phone: parsed.customer.phone,
     customer_email: parsed.customer.email,
     customer_notes: parsed.customer.notes,
+    pickup_time_type: parsed.customer.pickupTimeType ?? null,
+    scheduled_pickup_time: parsed.customer.scheduledPickupTime ?? null,
     status: parsed.status,
     created_at: parsed.placedAt ?? null,
     subtotal: parsed.totals.subtotal,
@@ -80,6 +86,16 @@ function localTicket(orderNumber: string): TicketOrder | null {
   };
 }
 
+function scheduledPickupText(order: TicketOrder) {
+  const value = order.scheduled_pickup_time ?? order.pickup_time;
+  if (!value || (order.pickup_time_type && order.pickup_time_type !== "scheduled")) return null;
+  return value ? formatPickupDateTime(value) : null;
+}
+
+function readyPickupText(order: TicketOrder) {
+  return order.estimated_ready_at ? formatPickupDateTime(order.estimated_ready_at) : null;
+}
+
 export function PrintTicket({ orderNumber }: { orderNumber: string }) {
   const [order, setOrder] = useState<TicketOrder | null>(null);
 
@@ -96,6 +112,8 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
   if (!order) return <section className="mx-auto max-w-2xl px-4 py-10 font-bold">Order not found.</section>;
 
   const placedAt = order.created_at ? formatPickupDateTime(order.created_at) : "";
+  const scheduledPickup = scheduledPickupText(order);
+  const readyPickup = !scheduledPickup ? readyPickupText(order) : null;
 
   return (
     <section className="receipt-ticket mx-auto max-w-2xl bg-white px-4 py-8 text-black print:p-0">
@@ -154,6 +172,13 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
         <p className="text-center text-xs font-bold print:text-[9pt]">{restaurant.address}</p>
         <p className="mt-2 text-center text-sm font-bold">Kitchen / Pickup Ticket</p>
         <p className="receipt-line mt-3 text-center text-2xl font-black leading-tight print:text-[16pt]">#{order.order_number}</p>
+        {scheduledPickup ? (
+          <div className="receipt-break mt-4 border-y-4 border-black bg-white py-3 text-center">
+            <p className="receipt-line text-3xl font-black leading-tight print:text-[20pt]">SCHEDULED PICKUP: {scheduledPickup}</p>
+          </div>
+        ) : (
+          <p className="receipt-line mt-4 border-y-2 border-black py-2 text-center text-2xl font-black print:text-[16pt]">PICKUP: ASAP</p>
+        )}
         <div className="receipt-break mt-4 grid gap-1 border-y-2 border-black py-3 text-base print:text-[11pt]">
           <p className="receipt-line">
             <strong>Name:</strong> {order.customer_name}
@@ -164,6 +189,11 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
           {placedAt && (
             <p className="receipt-line">
               <strong>Ordered:</strong> {placedAt}
+            </p>
+          )}
+          {readyPickup && (
+            <p className="receipt-line">
+              <strong>Ready:</strong> {readyPickup}
             </p>
           )}
           {order.customer_notes && (
