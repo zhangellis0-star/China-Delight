@@ -257,7 +257,6 @@ const rawMenuItems: MenuItem[] = [
   { id: "lunch-shrimp-lobster-sauce", number: "L6", name: "Shrimp with Lobster Sauce", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-moo-goo-gai-pan", number: "L7", name: "Moo Goo Gai Pan", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
   { id: "lunch-shrimp-chicken-lo-mein", number: "L8", name: "Shrimp or Chicken Lo Mein", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
-  { id: "lunch-beef-chicken-garlic", number: "L9", name: "Beef or Chicken with Garlic Sauce", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-boneless-spare-ribs", number: "L10", name: "Boneless Spare Ribs", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-sweet-sour-pork-chicken", number: "L11", name: "Sweet & Sour Pork or Chicken", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-roast-pork-lo-mein", number: "L12", name: "Roast Pork Lo Mein", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
@@ -408,10 +407,6 @@ const menuItemSplits: Record<string, MenuSplit[]> = {
   "lunch-shrimp-chicken-lo-mein": [
     { id: "lunch-shrimp-lo-mein", number: "L8A", name: "Shrimp Lo Mein" },
     { id: "lunch-chicken-lo-mein", number: "L8B", name: "Chicken Lo Mein" }
-  ],
-  "lunch-beef-chicken-garlic": [
-    { id: "lunch-beef-garlic-sauce", number: "L9A", name: "Beef with Garlic Sauce" },
-    { id: "lunch-chicken-garlic-sauce", number: "L9B", name: "Chicken with Garlic Sauce" }
   ],
   "lunch-sweet-sour-pork-chicken": [
     { id: "lunch-sweet-sour-pork", number: "L11A", name: "Sweet & Sour Pork" },
