@@ -129,7 +129,7 @@ export function ConfirmationNumber() {
           <div className="grid gap-1 border-t border-stone-200 pt-3 text-right">
             <p>Subtotal: {formatPrice(supabaseOrder.subtotal)}</p>
             {Number(supabaseOrder.discount_amount ?? 0) > 0 && (
-              <p className="text-china-red">Promo discount{supabaseOrder.promo_code ? ` (${supabaseOrder.promo_code})` : ""}: -{formatPrice(Number(supabaseOrder.discount_amount))}</p>
+              <p className="text-china-red">{supabaseOrder.promo_code ? `Promo discount (${supabaseOrder.promo_code})` : "Special offer discount"}: -{formatPrice(Number(supabaseOrder.discount_amount))}</p>
             )}
             <p>Tax: {formatPrice(supabaseOrder.tax)}</p>
             <p>Processing fee: {formatPrice(supabaseOrder.processing_fee ?? 0)}</p>
@@ -175,7 +175,7 @@ export function ConfirmationNumber() {
           <div className="grid gap-1 border-t border-stone-200 pt-3 text-right">
             <p>Subtotal: {formatPrice(lastOrder.totals.subtotal)}</p>
             {Number(lastOrder.totals.discount ?? 0) > 0 && (
-              <p className="text-china-red">Promo discount{lastOrder.totals.promoCode ? ` (${lastOrder.totals.promoCode})` : ""}: -{formatPrice(Number(lastOrder.totals.discount))}</p>
+              <p className="text-china-red">{lastOrder.totals.promoCode ? `Promo discount (${lastOrder.totals.promoCode})` : "Special offer discount"}: -{formatPrice(Number(lastOrder.totals.discount))}</p>
             )}
             <p>Tax: {formatPrice(lastOrder.totals.tax)}</p>
             <p>Processing fee: {formatPrice(lastOrder.totals.processingFee ?? 0)}</p>

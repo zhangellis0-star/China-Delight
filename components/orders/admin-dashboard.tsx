@@ -1236,7 +1236,7 @@ export function AdminDashboard() {
                   {order.created_at ? formatPickupDateTime(order.created_at) : "—"} · Total: {formatPrice(order.total)} · {itemCount} item{itemCount === 1 ? "" : "s"}
                 </p>
                 {Number(order.discount_amount ?? 0) > 0 && (
-                  <p className="mt-1 text-sm font-bold text-china-red">Promo{order.promo_code ? ` ${order.promo_code}` : ""}: -{formatPrice(Number(order.discount_amount))}</p>
+                  <p className="mt-1 text-sm font-bold text-china-red">{order.promo_code ? `Promo ${order.promo_code}` : "Special offer discount"}: -{formatPrice(Number(order.discount_amount))}</p>
                 )}
                 {order.customer_notes && hasInstructionAlert(order.customer_notes) && (
                   <p className="mt-1 rounded-md bg-yellow-100 px-2 py-1 text-sm font-bold text-yellow-950">Notes: {order.customer_notes}</p>

@@ -6,7 +6,7 @@ import { getOperationalSettings, orderingAllowed } from "@/lib/operations";
 import { calculateCart, customizationUpcharge, getItemPrice, hasReviewPrice } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode, validatePromo } from "@/lib/promo";
 import { addonPrices, restaurant } from "@/lib/restaurant";
-import { buildFreeOfferItem, getSpecialOffers, isOfferEligible } from "@/lib/special-offers";
+import { buildFreeLine, computeOffer, getSpecialOffers } from "@/lib/special-offers";
 import { getSupabaseAdmin, getSupabaseEnvStatus } from "@/lib/supabase-server";
 import { sendNewOrderTelegramNotification } from "@/lib/telegram";
 import type { CartCustomization, CartItem, CartTotals, CheckoutCustomer } from "@/types";
@@ -155,21 +155,30 @@ export async function POST(request: Request) {
     discountAmount = computePromoDiscount(subtotal, promo.discount_type, promo.discount_value);
   }
 
-  // Special offer (max one per order). The reward is a $0 line item, so it never changes the
-  // subtotal/tax/total and can never make the total negative. Apply only when truly eligible;
-  // an ineligible or unknown id is silently ignored (no money impact, order still valid).
+  // Special offer (max one per order). Free-reward types add $0 line items (no money impact);
+  // percentage/second-item types add a discount. computeOffer is the same pure function the
+  // browser used to preview the total, so the two always agree (and the client-total guard below
+  // is a final safety net). The combined discount is clamped to the subtotal in calculateCart, so
+  // the total can never go negative.
+  let offerDiscount = 0;
   if (body.specialOfferId) {
     const offers = await getSpecialOffers();
     const offer = offers.find((candidate) => candidate.id === body.specialOfferId);
-    if (offer && isOfferEligible(offer, subtotal)) {
-      const freeItem = buildFreeOfferItem(offer);
-      if (freeItem) items.push(freeItem);
-    } else {
-      console.warn("[checkout] Special offer not applied", { orderNumber, specialOfferId: body.specialOfferId, subtotal });
+    if (offer) {
+      const result = computeOffer(offer, items, subtotal);
+      if (result.applied) {
+        for (const ref of result.freeItems) {
+          const line = buildFreeLine(ref.itemId, ref.quantity, offer);
+          if (line) items.push(line);
+        }
+        offerDiscount = result.discount;
+      } else {
+        console.warn("[checkout] Special offer not applied", { orderNumber, specialOfferId: body.specialOfferId, reason: result.reason });
+      }
     }
   }
 
-  const finalTotals = calculateCart(items, tip, discountAmount);
+  const finalTotals = calculateCart(items, tip, discountAmount + offerDiscount);
 
   // If the browser's displayed total no longer matches the server-priced total
   // (tampered cart, or a stale cart from before a menu price change), make the
