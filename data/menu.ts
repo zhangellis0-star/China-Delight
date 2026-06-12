@@ -434,14 +434,27 @@ function applyMenuSplits(items: MenuItem[]) {
   });
 }
 
-export const menuItems: MenuItem[] = applyMenuSplits(rawMenuItems).map((item) => ({
-  ...item,
-  options: {
-    ...item.options,
-    lunchChoices: item.category === "Lunch Special" ? true : item.options?.lunchChoices,
-    comboIncluded: item.category === "Special Combination Platters" ? true : item.options?.comboIncluded
-  }
-}));
+// Master switch for the entire Lunch Special section. Set to false to hide all Lunch
+// Special items from customers (menu, order page, search, category filters) and to block
+// them from being ordered: when disabled they are excluded from `menuItems`, so the
+// checkout server can't find them when repricing and rejects the line.
+//
+// The raw lunch data stays untouched in `rawMenuItems`/`menuItemSplits` above, so lunch can
+// be turned back on later by flipping this to true. Past orders are unaffected because they
+// store their own item snapshots in `order_items` (used by admin display, kitchen tickets,
+// and the daily report) rather than reading from `menuItems`.
+export const LUNCH_SPECIALS_ENABLED = false;
+
+export const menuItems: MenuItem[] = applyMenuSplits(rawMenuItems)
+  .filter((item) => LUNCH_SPECIALS_ENABLED || item.category !== "Lunch Special")
+  .map((item) => ({
+    ...item,
+    options: {
+      ...item.options,
+      lunchChoices: item.category === "Lunch Special" ? true : item.options?.lunchChoices,
+      comboIncluded: item.category === "Special Combination Platters" ? true : item.options?.comboIncluded
+    }
+  }));
 
 export const menuCategories: MenuCategory[] = printedMenuCategories.filter((category) => menuItems.some((item) => item.category === category));
 
