@@ -19,25 +19,18 @@ import {
 } from "@/lib/order-rules";
 import { calculateCart, formatPrice } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode } from "@/lib/promo";
+import { computeOffer, offerSummary } from "@/lib/offer-logic";
+import type { PublicSpecialOffer } from "@/lib/offer-logic";
 import type { AppliedPromo, CheckoutCustomer } from "@/types";
 
 type CheckoutFormCustomer = CheckoutCustomer;
 type TipChoice = "none" | "18" | "20" | "22" | "custom";
 type CheckoutFieldErrors = Partial<Record<"name" | "phone" | "email", string>>;
-type PublicOffer = {
-  id: string;
-  title: string;
-  description?: string | null;
-  minimumSubtotal: number;
-  rewardItemId: string;
-  rewardItemName: string;
-  rewardQuantity: number;
-};
 type PublicSettings = {
   orderingAllowed: boolean;
   busyMode: "normal" | "busy" | "very_busy";
   soldOutItemIds: string[];
-  specialOffers?: PublicOffer[];
+  specialOffers?: PublicSpecialOffer[];
   orderingOverride?: { mode: "normal" | "open" | "paused"; expiresAt: string | null };
   nextBoundary?: { label: string; iso: string };
 };
@@ -53,6 +46,14 @@ function validateCustomerFields(customer: CheckoutFormCustomer) {
   if (!customer.email.trim()) errors.email = "Required";
   else if (!isValidEmail(customer.email)) errors.email = "Enter a valid email";
   return errors;
+}
+
+// Resolve the display name for a free reward line that an applied offer grants.
+function offerItemName(offer: PublicSpecialOffer, itemId: string) {
+  if (offer.rewardItemId === itemId) return offer.rewardItemName ?? "Free item";
+  if (offer.secondItemId === itemId) return offer.secondItemName ?? "Item";
+  if (offer.requiredItemId === itemId) return offer.requiredItemName ?? "Item";
+  return "Item";
 }
 
 export default function CheckoutPage() {
@@ -72,10 +73,18 @@ export default function CheckoutPage() {
   const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoLoading, setPromoLoading] = useState(false);
-  // Special offers: customers may select at most one (no stacking).
+  // Special offers: customers may select at most one (one promo + one offer max, matching the server).
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<PublicSettings | null>(null);
   // Recompute the discount against the live subtotal so it always matches what the server will charge.
-  const discountAmount = appliedPromo ? computePromoDiscount(baseSubtotal, appliedPromo.discountType, appliedPromo.discountValue) : 0;
+  const promoDiscount = appliedPromo ? computePromoDiscount(baseSubtotal, appliedPromo.discountType, appliedPromo.discountValue) : 0;
+  const specialOffers = settings?.specialOffers ?? [];
+  const selectedOffer = specialOffers.find((offer) => offer.id === selectedOfferId) ?? null;
+  // Same pure computation the server runs, so the previewed total matches the charged total.
+  const offerResult = selectedOffer ? computeOffer(selectedOffer, items, baseSubtotal) : null;
+  const selectedOfferApplied = offerResult?.applied ?? false;
+  const offerDiscount = selectedOfferApplied ? offerResult?.discount ?? 0 : 0;
+  const discountAmount = promoDiscount + offerDiscount;
   const parsedCustomTip = Number(customTip || 0);
   const tipAmount =
     tipChoice === "custom"
@@ -84,11 +93,7 @@ export default function CheckoutPage() {
         ? 0
         : baseSubtotal * (Number(tipChoice) / 100);
   const totals = calculateCart(items, tipAmount, discountAmount);
-  const [settings, setSettings] = useState<PublicSettings | null>(null);
   const orderingOpen = settings?.orderingAllowed ?? isRestaurantOpen();
-  const specialOffers = settings?.specialOffers ?? [];
-  const selectedOffer = specialOffers.find((offer) => offer.id === selectedOfferId) ?? null;
-  const selectedOfferEligible = selectedOffer ? baseSubtotal >= selectedOffer.minimumSubtotal : false;
   const [loading, setLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<CheckoutFieldErrors>({});
@@ -138,12 +143,12 @@ export default function CheckoutPage() {
     };
   }, []);
 
-  // Drop a chosen offer if the cart no longer qualifies (item removed) or the offer is gone.
+  // Drop a chosen offer only if the admin removed/disabled it. Whether it currently applies is
+  // decided live by computeOffer, so a customer can keep it selected while they add the items.
   useEffect(() => {
     if (!selectedOfferId) return;
-    const offer = specialOffers.find((candidate) => candidate.id === selectedOfferId);
-    if (!offer || baseSubtotal < offer.minimumSubtotal) setSelectedOfferId(null);
-  }, [selectedOfferId, specialOffers, baseSubtotal]);
+    if (!specialOffers.some((candidate) => candidate.id === selectedOfferId)) setSelectedOfferId(null);
+  }, [selectedOfferId, specialOffers]);
 
   function applySchedule(dateStr: string, timeStr: string) {
     setPickupDate(dateStr);
@@ -234,7 +239,7 @@ export default function CheckoutPage() {
     const response = await fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customer, items, totals, promoCode: appliedPromo?.code ?? null, specialOfferId: selectedOfferEligible ? selectedOfferId : null })
+      body: JSON.stringify({ customer, items, totals, promoCode: appliedPromo?.code ?? null, specialOfferId: selectedOfferApplied ? selectedOfferId : null })
     });
     const data = await response.json();
     if (!response.ok) {
@@ -440,7 +445,7 @@ export default function CheckoutPage() {
                   {appliedPromo.description && <p className="text-sm font-bold text-green-800">{appliedPromo.description}</p>}
                   <p className="text-sm font-bold text-green-800">You save {formatPrice(discountAmount)}</p>
                 </div>
-                <button type="button" onClick={clearPromo} className="focus-ring min-h-11 rounded-md border border-green-700 bg-white px-4 font-black text-green-800 sm:w-auto">
+                <button type="button" onClick={clearPromo} className="focus-ring min-h-11 rounded-md border border-green-700 bg-white px-4 font-black text-green-800">
                   Remove code
                 </button>
               </div>
@@ -475,38 +480,40 @@ export default function CheckoutPage() {
           {specialOffers.length > 0 && (
             <div className="rounded-md border border-stone-200 bg-china-paper p-3 sm:p-4">
               <p className="font-black">Special offers</p>
-              <p className="mt-1 text-sm leading-6 text-stone-700">Pick one special offer to add to your order. Only one offer can be used per order.</p>
+              <p className="mt-1 text-sm leading-6 text-stone-700">Pick one special offer for your order. Only one offer can be used per order.</p>
               <div className="mt-3 grid gap-2">
                 {specialOffers.map((offer) => {
-                  const eligible = baseSubtotal >= offer.minimumSubtotal;
                   const selected = selectedOfferId === offer.id;
-                  const remaining = Math.max(0, offer.minimumSubtotal - baseSubtotal);
+                  const result = computeOffer(offer, items, baseSubtotal);
+                  const rewardNames = result.freeItems.map((free) => `${free.quantity > 1 ? `${free.quantity} x ` : ""}${offerItemName(offer, free.itemId)}`);
                   return (
                     <button
                       key={offer.id}
                       type="button"
-                      disabled={!eligible && !selected}
                       onClick={() => setSelectedOfferId(selected ? null : offer.id)}
-                      className={`focus-ring rounded-md border p-3 text-left ${selected ? "border-china-red bg-red-50" : "border-stone-300 bg-white"} ${!eligible && !selected ? "cursor-not-allowed opacity-60" : ""}`}
+                      className={`focus-ring rounded-md border p-3 text-left ${selected ? "border-china-red bg-red-50" : "border-stone-300 bg-white"}`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="min-w-0 break-words font-black">{offer.title}</span>
-                        {selected ? (
-                          <span className="shrink-0 rounded-md bg-china-red px-2 py-0.5 text-xs font-black text-white">Added</span>
-                        ) : eligible ? (
-                          <span className="shrink-0 text-sm font-black text-china-red">Tap to add</span>
-                        ) : null}
+                        <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-black ${selected ? "bg-china-red text-white" : "text-china-red"}`}>
+                          {selected ? "Selected" : "Tap to choose"}
+                        </span>
                       </div>
-                      {offer.description && <p className="mt-1 text-sm font-bold text-stone-600">{offer.description}</p>}
-                      {eligible ? (
-                        <p className="mt-1 text-sm font-bold text-green-700">Free: {offer.rewardQuantity > 1 ? `${offer.rewardQuantity} x ` : ""}{offer.rewardItemName}</p>
+                      <p className="mt-1 text-sm font-bold text-stone-600">{offerSummary(offer)}</p>
+                      {result.applied ? (
+                        <p className="mt-1 text-sm font-black text-green-700">
+                          {result.discount > 0 ? `Discount: -${formatPrice(result.discount)}` : `Free: ${rewardNames.join(", ")}`}
+                        </p>
                       ) : (
-                        <p className="mt-1 text-sm font-bold text-stone-500">Add {formatPrice(remaining)} more (before tax) to unlock.</p>
+                        <p className="mt-1 text-sm font-bold text-stone-500">{result.reason}</p>
                       )}
                     </button>
                   );
                 })}
               </div>
+              {selectedOffer && !selectedOfferApplied && (
+                <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{offerResult?.reason}</p>
+              )}
             </div>
           )}
 
@@ -607,15 +614,15 @@ export default function CheckoutPage() {
                 <span className="shrink-0 font-bold">{formatPrice(item.unitPrice * item.quantity)}</span>
               </div>
             ))}
-            {selectedOffer && selectedOfferEligible && (
-              <div className="flex justify-between gap-3 text-sm">
+            {selectedOffer && selectedOfferApplied && offerResult?.freeItems.map((free) => (
+              <div key={free.itemId} className="flex justify-between gap-3 text-sm">
                 <span className="min-w-0 break-words">
-                  {selectedOffer.rewardQuantity > 1 ? `${selectedOffer.rewardQuantity} x ` : ""}{selectedOffer.rewardItemName}
+                  {free.quantity > 1 ? `${free.quantity} x ` : ""}{offerItemName(selectedOffer, free.itemId)}
                   <span className="block text-xs font-bold text-green-700">Special offer</span>
                 </span>
                 <span className="shrink-0 font-bold text-green-700">FREE</span>
               </div>
-            )}
+            ))}
           </div>
           <div className="mt-5 grid gap-2 border-t border-stone-200 pt-4">
             <div className="flex justify-between gap-3">
@@ -624,8 +631,14 @@ export default function CheckoutPage() {
             </div>
             {totals.discount > 0 && (
               <div className="flex justify-between gap-3 text-china-red">
-                <span className="min-w-0 break-words">Promo discount{appliedPromo ? ` (${appliedPromo.code})` : ""}</span>
-                <span>-{formatPrice(totals.discount)}</span>
+                <span className="min-w-0 break-words">
+                  {appliedPromo && offerDiscount > 0
+                    ? `Promo (${appliedPromo.code}) + special offer discount`
+                    : appliedPromo
+                      ? `Promo discount (${appliedPromo.code})`
+                      : "Special offer discount"}
+                </span>
+                <span className="shrink-0">-{formatPrice(totals.discount)}</span>
               </div>
             )}
             <div className="flex justify-between gap-3">
