@@ -257,7 +257,6 @@ const rawMenuItems: MenuItem[] = [
   { id: "lunch-shrimp-lobster-sauce", number: "L6", name: "Shrimp with Lobster Sauce", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-moo-goo-gai-pan", number: "L7", name: "Moo Goo Gai Pan", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
   { id: "lunch-shrimp-chicken-lo-mein", number: "L8", name: "Shrimp or Chicken Lo Mein", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
-  { id: "lunch-beef-chicken-garlic", number: "L9", name: "Beef or Chicken with Garlic Sauce", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-boneless-spare-ribs", number: "L10", name: "Boneless Spare Ribs", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-sweet-sour-pork-chicken", number: "L11", name: "Sweet & Sour Pork or Chicken", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-roast-pork-lo-mein", number: "L12", name: "Roast Pork Lo Mein", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
@@ -265,14 +264,32 @@ const rawMenuItems: MenuItem[] = [
   { id: "lunch-chicken-cashew", number: "L14", name: "Chicken with Cashew Nuts", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-chicken-roast-pork-broccoli", number: "L14a", name: "Chicken or Roast Pork with Broccoli", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
   { id: "lunch-chicken-beef-szechuan", number: "L15", name: "Chicken or Beef Szechuan Style", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
-  { id: "lunch-sesame-chicken", number: "L16", name: "Sesame Chicken", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-teriyaki-chicken-vegetable", number: "L17", name: "Teriyaki Chicken with Vegetable", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
   { id: "lunch-teriyaki-beef-vegetable", number: "L17a", name: "Teriyaki Beef with Vegetable", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-shrimp-chinese-vegetables", number: "L18", name: "Shrimp with Chinese Vegetables", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 10.25 }, options: lunchOptions },
   { id: "lunch-shrimp-mixed-vegetables", number: "L19", name: "Shrimp with Mixed Vegetables", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 10.25 }, options: lunchOptions },
-  { id: "lunch-general-tsos-chicken", number: "L20", name: "General Tso's Chicken", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-shrimp-broccoli-alt", number: "L21", name: "Shrimp with Broccoli", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-sauteed-mixed-vegetables", number: "L22", name: "Sauteed Mixed Vegetables", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
+  { id: "lunch-beef-snow-peas", number: "L23", name: "Beef with Snow Peas", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-roast-pork-mushroom", number: "L26", name: "Roast Pork with Mushroom", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
+  { id: "lunch-sauteed-broccoli", number: "L27", name: "Sauteed Broccoli", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
+  { id: "lunch-sesame-shrimp", number: "L28", name: "Sesame Shrimp", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-sesame-chicken", number: "L29", name: "Sesame Chicken", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-chicken-garlic-sauce-l30", number: "L30", name: "Chicken with Garlic Sauce", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
+  { id: "lunch-general-tsos-shrimp", number: "L31", name: "General Tso's Shrimp", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-beef-garlic-sauce-l32", number: "L32", name: "Beef with Garlic Sauce", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-szechuan-spicy-chicken", number: "L33", name: "Szechuan Spicy Chicken", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
+  { id: "lunch-szechuan-spicy-beef", number: "L34", name: "Szechuan Spicy Beef", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-general-tsos-chicken", number: "L35", name: "General Tso's Chicken", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-broccoli-garlic-sauce", number: "L36", name: "Broccoli with Garlic Sauce", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
+  { id: "lunch-kung-po-chicken-shrimp", number: "L37", name: "Kung Po Chicken or Shrimp with Peanuts", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-eggplant-chicken", number: "L38", name: "Eggplant with Chicken", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.45 }, options: lunchOptions },
+  { id: "lunch-hunan-beef-chicken", number: "L40", name: "Hunan Beef or Chicken", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-shrimp-garlic-sauce", number: "L41", name: "Shrimp with Garlic Sauce", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-black-pepper-chicken", number: "L42", name: "Black Pepper Chicken", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-honey-chicken", number: "L43", name: "Honey Chicken", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-coconut-shrimp", number: "L45", name: "Coconut Shrimp", category: "Lunch Special", description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
+  { id: "lunch-szechuan-shrimp", number: "L46", name: "Szechuan Shrimp", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
 
   { id: "fortune-cookies", number: "S1", name: "Fortune Cookies", category: "Side Orders", prices: { order: 1.50 }, options: regularOptions },
   { id: "fried-noodles", number: "S2", name: "Fried Noodles", category: "Side Orders", prices: { order: 1.55 }, description: "1 bag.", options: regularOptions },
@@ -391,10 +408,6 @@ const menuItemSplits: Record<string, MenuSplit[]> = {
     { id: "lunch-shrimp-lo-mein", number: "L8A", name: "Shrimp Lo Mein" },
     { id: "lunch-chicken-lo-mein", number: "L8B", name: "Chicken Lo Mein" }
   ],
-  "lunch-beef-chicken-garlic": [
-    { id: "lunch-beef-garlic-sauce", number: "L9A", name: "Beef with Garlic Sauce" },
-    { id: "lunch-chicken-garlic-sauce", number: "L9B", name: "Chicken with Garlic Sauce" }
-  ],
   "lunch-sweet-sour-pork-chicken": [
     { id: "lunch-sweet-sour-pork", number: "L11A", name: "Sweet & Sour Pork" },
     { id: "lunch-sweet-sour-chicken", number: "L11B", name: "Sweet & Sour Chicken" }
@@ -421,14 +434,27 @@ function applyMenuSplits(items: MenuItem[]) {
   });
 }
 
-export const menuItems: MenuItem[] = applyMenuSplits(rawMenuItems).map((item) => ({
-  ...item,
-  options: {
-    ...item.options,
-    lunchChoices: item.category === "Lunch Special" ? true : item.options?.lunchChoices,
-    comboIncluded: item.category === "Special Combination Platters" ? true : item.options?.comboIncluded
-  }
-}));
+// Master switch for the entire Lunch Special section. Set to false to hide all Lunch
+// Special items from customers (menu, order page, search, category filters) and to block
+// them from being ordered: when disabled they are excluded from `menuItems`, so the
+// checkout server can't find them when repricing and rejects the line.
+//
+// The raw lunch data stays untouched in `rawMenuItems`/`menuItemSplits` above, so lunch can
+// be turned back on later by flipping this to true. Past orders are unaffected because they
+// store their own item snapshots in `order_items` (used by admin display, kitchen tickets,
+// and the daily report) rather than reading from `menuItems`.
+export const LUNCH_SPECIALS_ENABLED = false;
+
+export const menuItems: MenuItem[] = applyMenuSplits(rawMenuItems)
+  .filter((item) => LUNCH_SPECIALS_ENABLED || item.category !== "Lunch Special")
+  .map((item) => ({
+    ...item,
+    options: {
+      ...item.options,
+      lunchChoices: item.category === "Lunch Special" ? true : item.options?.lunchChoices,
+      comboIncluded: item.category === "Special Combination Platters" ? true : item.options?.comboIncluded
+    }
+  }));
 
 export const menuCategories: MenuCategory[] = printedMenuCategories.filter((category) => menuItems.some((item) => item.category === category));
 
