@@ -7,12 +7,20 @@ export type DailyReportOrder = {
   status: string;
   payment_method?: string | null;
   payment_status?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  created_at?: string | null;
   subtotal: number | null;
   tax: number | null;
   processing_fee?: number | null;
   tip_amount?: number | null;
   discount_amount?: number | null;
   total: number | null;
+  order_items?: Array<{
+    item_number?: string | null;
+    item_name?: string | null;
+    quantity?: number | null;
+  }> | null;
 };
 
 export type DailyReportSummary = {

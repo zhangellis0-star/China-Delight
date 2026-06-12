@@ -102,6 +102,42 @@ type EditOrderState = {
     extraChargeAmount: string;
   }>;
 };
+type DailyReportSummaryView = {
+  totalOrders: number;
+  cancelledOrders: number;
+  foodSales: number;
+  discounts: number;
+  tax: number;
+  processingFees: number;
+  tips: number;
+  cashTotal: number;
+  stripeTotal: number;
+  grandTotal: number;
+};
+type DailyReportDetail = {
+  date: string;
+  dateLabel: string;
+  testOrdersExcluded: number;
+  summary: DailyReportSummaryView;
+  orders: Array<{
+    orderNumber: string;
+    createdAt: string | null;
+    timeLabel: string;
+    customerName: string;
+    customerPhone: string;
+    status: OrderStatus;
+    paymentMethod: PaymentMethod | string;
+    paymentStatus?: PaymentStatus | null;
+    subtotal: number;
+    tax: number;
+    processingFee: number;
+    tip: number;
+    discount: number;
+    total: number;
+    itemsSummary: string;
+  }>;
+};
+type DailyReportRecent = Pick<DailyReportDetail, "date" | "dateLabel" | "testOrdersExcluded" | "summary">;
 
 const statuses: OrderStatus[] = ["new", "accepted", "preparing", "ready", "picked_up", "completed", "cancelled"];
 const filterTabs: Array<{ value: AdminFilter; label: string }> = [
@@ -335,6 +371,13 @@ export function AdminDashboard() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [creatingTestOrder, setCreatingTestOrder] = useState(false);
   const [dailyReportBusy, setDailyReportBusy] = useState(false);
+  const [reportsPanelOpen, setReportsPanelOpen] = useState(false);
+  const [reportDate, setReportDate] = useState("");
+  const [dailyReportDetail, setDailyReportDetail] = useState<DailyReportDetail | null>(null);
+  const [recentReports, setRecentReports] = useState<DailyReportRecent[]>([]);
+  const [dailyReportHistoryLoading, setDailyReportHistoryLoading] = useState(false);
+  const [dailyReportHistoryError, setDailyReportHistoryError] = useState<string | null>(null);
+  const [dailyReportReprintDate, setDailyReportReprintDate] = useState<string | null>(null);
   const [toolMessage, setToolMessage] = useState<string | null>(null);
   const dailyReportAutoRef = useRef(false);
   const [networkPrintingOrders, setNetworkPrintingOrders] = useState<Set<string>>(new Set());
@@ -642,6 +685,52 @@ export function AdminDashboard() {
     link.download = `china-delight-orders-${easternDateKey(new Date().toISOString())}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  const loadDailyReportHistory = useCallback(async (date = reportDate || easternDateKey()) => {
+    setDailyReportHistoryLoading(true);
+    setDailyReportHistoryError(null);
+    try {
+      const response = await fetch(`/api/admin/daily-report?date=${encodeURIComponent(date)}&days=30`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load daily report history.");
+      setDailyReportDetail(data.report ?? null);
+      setRecentReports(data.recentReports ?? []);
+      setReportDate(data.report?.date ?? date);
+    } catch (error) {
+      setDailyReportHistoryError(error instanceof Error ? error.message : "Could not load daily report history.");
+    } finally {
+      setDailyReportHistoryLoading(false);
+    }
+  }, [reportDate]);
+
+  useEffect(() => {
+    if (!reportDate) setReportDate(easternDateKey());
+  }, [reportDate]);
+
+  useEffect(() => {
+    if (reportsPanelOpen && !dailyReportDetail && !dailyReportHistoryLoading) {
+      void loadDailyReportHistory(reportDate || easternDateKey());
+    }
+  }, [dailyReportDetail, dailyReportHistoryLoading, loadDailyReportHistory, reportDate, reportsPanelOpen]);
+
+  async function reprintDailyReport(date: string) {
+    setDailyReportReprintDate(date);
+    setToolMessage(null);
+    try {
+      const response = await fetch("/api/admin/daily-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, force: true })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Daily report print failed.");
+      setToolMessage(`Daily report reprinted for ${data.date}${data.summary ? ` (${data.summary.totalOrders} orders, total ${formatPrice(data.summary.grandTotal)})` : ""}.`);
+    } catch (error) {
+      setToolMessage(error instanceof Error ? error.message : "Daily report print failed.");
+    } finally {
+      setDailyReportReprintDate(null);
+    }
   }
 
   async function acceptWithReadyTime(orderNumber: string, minutes: number) {
@@ -1434,9 +1523,20 @@ export function AdminDashboard() {
         <div id="admin-reports" className="scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="font-black text-china-red">Today Reports</p>
-            <button onClick={exportTodayCsv} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-black text-stone-800">
-              Export today CSV
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={exportTodayCsv} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-black text-stone-800">
+                Export today CSV
+              </button>
+              <button
+                onClick={() => {
+                  setReportsPanelOpen((open) => !open);
+                  if (!reportsPanelOpen) void loadDailyReportHistory(reportDate || easternDateKey());
+                }}
+                className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-black text-stone-800"
+              >
+                {reportsPanelOpen ? "Hide history" : "View reports"}
+              </button>
+            </div>
           </div>
           <div className="mt-3 grid gap-2 text-sm">
             {topItems.length ? (
@@ -1450,6 +1550,115 @@ export function AdminDashboard() {
               <p className="font-bold text-stone-600">No item sales yet today.</p>
             )}
           </div>
+          {reportsPanelOpen && (
+            <div className="mt-4 grid gap-3 rounded-md border border-china-gold/50 bg-white p-3">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="font-black text-china-red">Daily Reports History</p>
+                  <p className="text-xs font-bold text-stone-600">Generated from existing orders. Test orders are excluded from real totals.</p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[10rem_auto]">
+                  <label className="grid gap-1 text-xs font-black text-stone-700">
+                    Report date
+                    <input
+                      type="date"
+                      value={reportDate}
+                      onChange={(event) => setReportDate(event.target.value)}
+                      className="focus-ring h-10 rounded-md border border-china-gold/70 px-2 font-bold"
+                    />
+                  </label>
+                  <button
+                    onClick={() => loadDailyReportHistory(reportDate || easternDateKey())}
+                    disabled={dailyReportHistoryLoading}
+                    className="focus-ring min-h-10 self-end rounded-md bg-china-red px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400"
+                  >
+                    {dailyReportHistoryLoading ? "Loading..." : "View report"}
+                  </button>
+                </div>
+              </div>
+              {dailyReportHistoryError && <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{dailyReportHistoryError}</p>}
+              {dailyReportDetail && (
+                <div className="grid gap-3">
+                  <div className="rounded-md border border-china-gold/40 bg-[#fff7e8] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-black">{dailyReportDetail.dateLabel}</p>
+                        <p className="text-xs font-bold text-stone-600">
+                          {dailyReportDetail.testOrdersExcluded} test order{dailyReportDetail.testOrdersExcluded === 1 ? "" : "s"} excluded. Cancelled orders excluded from money totals.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => reprintDailyReport(dailyReportDetail.date)}
+                        disabled={dailyReportReprintDate === dailyReportDetail.date}
+                        className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {dailyReportReprintDate === dailyReportDetail.date ? "Reprinting..." : "Reprint report"}
+                      </button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold sm:grid-cols-4">
+                      {[
+                        ["Real orders", dailyReportDetail.summary.totalOrders],
+                        ["Cancelled", dailyReportDetail.summary.cancelledOrders],
+                        ["Subtotal", formatPrice(dailyReportDetail.summary.foodSales)],
+                        ["Discounts", formatPrice(dailyReportDetail.summary.discounts)],
+                        ["Tax", formatPrice(dailyReportDetail.summary.tax)],
+                        ["Tips", formatPrice(dailyReportDetail.summary.tips)],
+                        ["Cash", formatPrice(dailyReportDetail.summary.cashTotal)],
+                        ["Stripe", formatPrice(dailyReportDetail.summary.stripeTotal)],
+                        ["Final total", formatPrice(dailyReportDetail.summary.grandTotal)]
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-md border border-china-gold/40 bg-white p-2">
+                          <p className="uppercase tracking-wide text-china-red">{label}</p>
+                          <p className="mt-0.5 text-sm font-black text-stone-900">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <p className="text-xs font-black uppercase tracking-wide text-china-red">Recent reports</p>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {recentReports.map((report) => (
+                        <button
+                          key={report.date}
+                          onClick={() => loadDailyReportHistory(report.date)}
+                          className={`focus-ring min-w-40 shrink-0 rounded-md border px-3 py-2 text-left text-xs font-bold ${
+                            dailyReportDetail.date === report.date ? "border-china-red bg-red-50 text-china-red" : "border-china-gold/60 bg-white text-stone-800"
+                          }`}
+                        >
+                          <span className="block font-black">{report.date}</span>
+                          <span className="block">{report.summary.totalOrders} orders / {formatPrice(report.summary.grandTotal)}</span>
+                          <span className="block text-[11px] text-stone-600">{report.testOrdersExcluded} test excluded</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <p className="text-xs font-black uppercase tracking-wide text-china-red">Report details</p>
+                    {dailyReportDetail.orders.length === 0 ? (
+                      <p className="rounded-md border border-china-gold/40 bg-white p-3 text-sm font-bold text-stone-600">No real orders for this date.</p>
+                    ) : (
+                      dailyReportDetail.orders.map((order) => (
+                        <div key={order.orderNumber} className="rounded-md border border-china-gold/40 bg-white p-3 text-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-black text-china-red">#{order.orderNumber} <span className="text-stone-900">{order.timeLabel}</span></p>
+                              <p className="break-words font-bold">{order.customerName} / {order.customerPhone}</p>
+                              <p className="text-xs font-bold text-stone-600">{paymentLabel(order.paymentMethod as PaymentMethod, order.paymentStatus ?? undefined)} / {statusLabel(order.status)}</p>
+                            </div>
+                            <p className="shrink-0 text-base font-black">{formatPrice(order.total)}</p>
+                          </div>
+                          {order.discount > 0 && <p className="mt-1 text-xs font-bold text-china-red">Discount: -{formatPrice(order.discount)}</p>}
+                          {order.itemsSummary && <p className="mt-1 break-words text-xs font-bold text-stone-600">{order.itemsSummary}</p>}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div id="admin-settings" className="scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4 lg:col-span-2">
