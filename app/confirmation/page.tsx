@@ -8,9 +8,9 @@ export default function ConfirmationPage() {
   return (
     <section className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 lg:px-8">
       <CheckCircle2 className="mx-auto h-16 w-16 text-green-600" />
-      <h1 className="mt-5 text-4xl font-black">Order received</h1>
-      <p className="mt-3 text-xl text-stone-700">Your order number is:</p>
-      <Suspense fallback={<p className="mt-3 rounded-lg bg-white p-5 text-4xl font-black text-china-red shadow-warm">Loading...</p>}>
+      <h1 className="mt-5 text-3xl font-black sm:text-4xl">Order received</h1>
+      <p className="mt-3 text-lg text-stone-700 sm:text-xl">Your order number is:</p>
+      <Suspense fallback={<p className="mt-3 break-words rounded-lg bg-white p-5 text-3xl font-black text-china-red shadow-warm sm:text-4xl">Loading...</p>}>
         <ConfirmationNumber />
       </Suspense>
       <p className="mt-6 text-lg leading-8 text-stone-700">
