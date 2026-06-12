@@ -84,6 +84,7 @@ export function SpecialOffersManager() {
   const [menuOptions, setMenuOptions] = useState<MenuOption[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editing, setEditing] = useState<null | "new" | string>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +118,7 @@ export function SpecialOffersManager() {
     setForm(emptyForm);
     setError(null);
     setMessage(null);
+    setPanelOpen(true);
     setEditing("new");
   }
 
@@ -244,10 +246,22 @@ export function SpecialOffersManager() {
 
   return (
     <div id="admin-special-offers" className="mt-6 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-4 shadow-sm">
+      {!panelOpen ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="font-black text-china-red">Special Offers</p>
+            <p className="text-sm font-bold text-stone-600">{activeCount} active · {offers.length} total · one offer per order</p>
+          </div>
+          <button onClick={() => setPanelOpen(true)} className="focus-ring inline-flex items-center gap-2 rounded-md bg-china-red px-4 py-2 text-sm font-black text-white">
+            Manage offers
+          </button>
+        </div>
+      ) : (
+      <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="font-black text-china-red">Special Offers</p>
-          <p className="text-sm font-bold text-stone-600">{offers.length} offer{offers.length === 1 ? "" : "s"} · {activeCount} active · one offer per order</p>
+          <p className="text-sm font-bold text-stone-600">{activeCount} active · {offers.length} total · one offer per order</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={load} disabled={loading} className="focus-ring inline-flex items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-bold text-stone-800 disabled:opacity-60">
@@ -260,6 +274,10 @@ export function SpecialOffersManager() {
               Create offer
             </button>
           )}
+          <button onClick={() => { closeEditor(); setPanelOpen(false); }} className="focus-ring inline-flex items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-black text-stone-800">
+            <X className="h-4 w-4" />
+            Close
+          </button>
         </div>
       </div>
 
@@ -380,6 +398,8 @@ export function SpecialOffersManager() {
           </div>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 }

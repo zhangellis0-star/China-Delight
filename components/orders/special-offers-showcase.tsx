@@ -7,9 +7,10 @@ import { calculateCart, formatPrice } from "@/lib/pricing";
 import { computeOffer, offerSummary } from "@/lib/offer-logic";
 import type { PublicSpecialOffer } from "@/lib/offer-logic";
 
-// Customer-facing special offers. Reads the global cart so the live state (progress bar / "unlocked")
-// updates everywhere the component is shown (homepage, menu/order, cart) as items change. It uses the
-// same computeOffer the checkout uses, so what shows here matches what applies at checkout.
+// Customer-facing special offers shown as a compact, horizontally scrollable row of small promo
+// cards (saves vertical space; only this row scrolls sideways, never the whole page). Reads the
+// global cart so the "unlocked" state / progress bar update live, using the same computeOffer the
+// checkout uses so what shows here matches what applies at checkout.
 export function SpecialOffersShowcase({ heading = "Special offers", className = "" }: { heading?: string; className?: string }) {
   const { items } = useCart();
   const subtotal = calculateCart(items).subtotal;
@@ -31,12 +32,13 @@ export function SpecialOffersShowcase({ heading = "Special offers", className = 
   if (!offers.length) return null;
 
   return (
-    <section className={`rounded-lg border border-china-gold/60 bg-[#fffaf0] p-5 shadow-sm ${className}`}>
+    <section className={`rounded-lg border border-china-gold/60 bg-[#fffaf0] p-3 shadow-sm ${className}`}>
       <div className="flex items-center gap-2 text-china-red">
-        <Gift className="h-5 w-5" />
-        <h2 className="text-xl font-black">{heading}</h2>
+        <Gift className="h-4 w-4" />
+        <h2 className="text-sm font-black uppercase tracking-wide">{heading}</h2>
       </div>
-      <div className="mt-4 grid gap-4">
+      {/* Only this row scrolls horizontally; cards have a fixed width and snap into place. */}
+      <div className="mt-2 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
         {offers.map((offer) => {
           const result = computeOffer(offer, items, subtotal);
           const threshold = Math.max(0, offer.minimumSubtotal);
@@ -44,26 +46,21 @@ export function SpecialOffersShowcase({ heading = "Special offers", className = 
           const remaining = Math.max(0, threshold - subtotal);
           const pct = hasThreshold ? Math.min(100, Math.round((subtotal / threshold) * 100)) : result.applied ? 100 : 0;
           return (
-            <div key={offer.id} className="rounded-md border border-china-gold/50 bg-white p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-black text-stone-900">{offer.title}</p>
-                <span className={`rounded-md px-2 py-0.5 text-xs font-black uppercase ${result.applied ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}`}>
-                  {result.applied ? "Unlocked" : hasThreshold ? `Spend ${formatPrice(threshold)}` : "Add items"}
+            <div key={offer.id} className="flex w-56 shrink-0 snap-start flex-col rounded-md border border-china-gold/50 bg-white p-3">
+              <div className="flex items-start justify-between gap-2">
+                <p className="line-clamp-2 text-sm font-black leading-tight text-stone-900">{offer.title}</p>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${result.applied ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}`}>
+                  {result.applied ? "Ready" : hasThreshold ? formatPrice(threshold) : "Add"}
                 </span>
               </div>
-              <p className="mt-1 text-sm font-bold text-green-700">{offerSummary(offer)}</p>
-              {offer.description && <p className="mt-1 text-sm text-stone-600">{offer.description}</p>}
+              <p className="mt-1 line-clamp-2 text-xs font-bold leading-snug text-stone-600">{offerSummary(offer)}</p>
               {hasThreshold && (
-                <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
                   <div className={`h-full rounded-full transition-all ${result.applied ? "bg-china-green" : "bg-china-gold"}`} style={{ width: `${pct}%` }} />
                 </div>
               )}
-              <p className={`mt-2 text-sm font-black ${result.applied ? "text-china-green" : "text-stone-700"}`}>
-                {result.applied
-                  ? "Unlocked! Choose this offer at checkout."
-                  : hasThreshold
-                    ? `You are ${formatPrice(remaining)} away from unlocking this offer.`
-                    : result.reason}
+              <p className={`mt-1.5 text-[11px] font-black leading-snug ${result.applied ? "text-china-green" : "text-stone-600"}`}>
+                {result.applied ? "Unlocked — pick it at checkout" : hasThreshold ? `${formatPrice(remaining)} away` : result.reason}
               </p>
             </div>
           );
