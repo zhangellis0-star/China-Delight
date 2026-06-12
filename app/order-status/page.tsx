@@ -99,7 +99,7 @@ export default function OrderStatusPage() {
             </p>
             {Number(order.discountAmount ?? 0) > 0 && (
               <p className="text-china-red">
-                <strong>Promo discount{order.promoCode ? ` (${order.promoCode})` : ""}:</strong> -{formatPrice(Number(order.discountAmount))}
+                <strong>{order.promoCode ? `Promo discount (${order.promoCode})` : "Special offer discount"}:</strong> -{formatPrice(Number(order.discountAmount))}
               </p>
             )}
             {typeof order.total === "number" && (

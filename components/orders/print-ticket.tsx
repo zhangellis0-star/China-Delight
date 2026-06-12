@@ -201,7 +201,7 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
         <div className="receipt-break mt-5 grid gap-1 border-t-2 border-black pt-3 text-right text-base print:text-[11pt]">
           <p className="receipt-line">Subtotal: {formatPrice(order.subtotal)}</p>
           {Number(order.discount_amount ?? 0) > 0 && (
-            <p className="receipt-line">Promo discount{order.promo_code ? ` (${order.promo_code})` : ""}: -{formatPrice(Number(order.discount_amount))}</p>
+            <p className="receipt-line">{order.promo_code ? `Promo discount (${order.promo_code})` : "Special offer discount"}: -{formatPrice(Number(order.discount_amount))}</p>
           )}
           <p className="receipt-line">Tax ({taxPercent}%): {formatPrice(order.tax)}</p>
           <p className="receipt-line">Processing fee ({processingFeePercent}%): {formatPrice(order.processing_fee ?? 0)}</p>

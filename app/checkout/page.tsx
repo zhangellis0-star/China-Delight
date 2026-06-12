@@ -633,12 +633,10 @@ export default function CheckoutPage() {
               <div className="flex justify-between text-china-red">
                 <span>
                   {appliedPromo && offerDiscount > 0
-                    ? `Promo (${appliedPromo.code}) + offer`
+                    ? `Promo (${appliedPromo.code}) + special offer discount`
                     : appliedPromo
                       ? `Promo discount (${appliedPromo.code})`
-                      : offerDiscount > 0 && selectedOffer
-                        ? `Offer (${selectedOffer.title})`
-                        : "Discount"}
+                      : "Special offer discount"}
                 </span>
                 <span>-{formatPrice(totals.discount)}</span>
               </div>
