@@ -258,10 +258,10 @@ export default function CheckoutPage() {
   }
 
   return (
-    <section className={`mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8 ${items.length > 0 ? "pb-32 lg:pb-10" : ""}`}>
+    <section className={`mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-10 lg:px-8 ${items.length > 0 ? "pb-28 lg:pb-10" : ""}`}>
       <h1 className="text-3xl font-black sm:text-4xl">Checkout</h1>
-      <form id="checkout-form" noValidate onSubmit={submitOrder} className="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
-        <div className="grid gap-5 rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+      <form id="checkout-form" noValidate onSubmit={submitOrder} className="mt-6 grid gap-5 sm:mt-8 lg:grid-cols-[1fr_340px] lg:gap-6">
+        <div className="grid gap-4 rounded-lg border border-stone-200 bg-white p-4 shadow-sm sm:gap-5 sm:p-5">
           {fieldErrorMessage && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{fieldErrorMessage}</p>}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="grid gap-1 font-bold">
@@ -331,7 +331,7 @@ export default function CheckoutPage() {
             </label>
           </div>
 
-          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+          <div className="rounded-md border border-stone-200 bg-china-paper p-3 sm:p-4">
             <p className="font-black">Pickup only</p>
             <p className="mt-2 leading-7 text-stone-700">Online orders through this website are pickup only.</p>
             {settings?.busyMode && settings.busyMode !== "normal" && (
@@ -339,7 +339,7 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+          <div className="rounded-md border border-stone-200 bg-china-paper p-3 sm:p-4">
             <div className="flex items-center gap-2 font-black">
               <Clock className="h-5 w-5 text-china-red" />
               Pickup time
@@ -418,7 +418,7 @@ export default function CheckoutPage() {
             <p className="mt-3 text-sm font-bold text-stone-700">{ASAP_PICKUP_NOTE}</p>
           </div>
 
-          <div ref={paymentRef} className="rounded-md border border-stone-200 bg-china-paper p-4">
+          <div ref={paymentRef} className="rounded-md border border-stone-200 bg-china-paper p-3 sm:p-4">
             <div className="flex items-center gap-2 font-black">
               <WalletCards className="h-5 w-5 text-china-red" />
               Payment
@@ -430,7 +430,7 @@ export default function CheckoutPage() {
             {paymentError && <p role="alert" className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-china-red">{paymentError}</p>}
           </div>
 
-          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+          <div className="rounded-md border border-stone-200 bg-china-paper p-3 sm:p-4">
             <p className="font-black">Promo code</p>
             <p className="mt-1 text-sm leading-6 text-stone-700">Have a promo or store-credit code? Apply it before placing your order.</p>
             {appliedPromo ? (
@@ -440,7 +440,7 @@ export default function CheckoutPage() {
                   {appliedPromo.description && <p className="text-sm font-bold text-green-800">{appliedPromo.description}</p>}
                   <p className="text-sm font-bold text-green-800">You save {formatPrice(discountAmount)}</p>
                 </div>
-                <button type="button" onClick={clearPromo} className="focus-ring min-h-11 rounded-md border border-green-700 bg-white px-4 font-black text-green-800">
+                <button type="button" onClick={clearPromo} className="focus-ring min-h-11 rounded-md border border-green-700 bg-white px-4 font-black text-green-800 sm:w-auto">
                   Remove code
                 </button>
               </div>
@@ -473,7 +473,7 @@ export default function CheckoutPage() {
           </div>
 
           {specialOffers.length > 0 && (
-            <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+            <div className="rounded-md border border-stone-200 bg-china-paper p-3 sm:p-4">
               <p className="font-black">Special offers</p>
               <p className="mt-1 text-sm leading-6 text-stone-700">Pick one special offer to add to your order. Only one offer can be used per order.</p>
               <div className="mt-3 grid gap-2">
@@ -489,8 +489,8 @@ export default function CheckoutPage() {
                       onClick={() => setSelectedOfferId(selected ? null : offer.id)}
                       className={`focus-ring rounded-md border p-3 text-left ${selected ? "border-china-red bg-red-50" : "border-stone-300 bg-white"} ${!eligible && !selected ? "cursor-not-allowed opacity-60" : ""}`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-black">{offer.title}</span>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="min-w-0 break-words font-black">{offer.title}</span>
                         {selected ? (
                           <span className="shrink-0 rounded-md bg-china-red px-2 py-0.5 text-xs font-black text-white">Added</span>
                         ) : eligible ? (
@@ -510,7 +510,7 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          <div className="rounded-md border border-stone-200 bg-china-paper p-4">
+          <div className="rounded-md border border-stone-200 bg-china-paper p-3 sm:p-4">
             <p className="font-black">Optional tip</p>
             <p className="mt-1 text-sm leading-6 text-stone-700">No tip is selected by default. Thank you for supporting the staff.</p>
             <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
@@ -556,8 +556,8 @@ export default function CheckoutPage() {
           </label>
         </div>
 
-        <aside className="h-fit rounded-lg border border-stone-200 bg-white p-5 shadow-warm">
-          <h2 className="text-2xl font-black">Review your order</h2>
+        <aside className="h-fit rounded-lg border border-stone-200 bg-white p-4 shadow-warm sm:p-5">
+          <h2 className="text-xl font-black sm:text-2xl">Review your order</h2>
           {!orderingOpen && (
             <p ref={closedMessageRef} role="alert" className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
               {settings?.orderingOverride?.mode === "paused" ? `Online ordering is paused until ${settings.nextBoundary?.label ?? "the next store-hours boundary"}.` : `${closedOrderingMessage} ${nextOpeningLabel()}`}
@@ -600,47 +600,47 @@ export default function CheckoutPage() {
           <div className="mt-4 grid gap-3">
             {items.map((item) => (
               <div key={item.cartId} className="flex justify-between gap-3 text-sm">
-                <span>
+                <span className="min-w-0 break-words">
                   {item.quantity} x {item.name}
                   {customizationText(item.customization) && <span className="block text-xs text-stone-600">{customizationText(item.customization)}</span>}
                 </span>
-                <span className="font-bold">{formatPrice(item.unitPrice * item.quantity)}</span>
+                <span className="shrink-0 font-bold">{formatPrice(item.unitPrice * item.quantity)}</span>
               </div>
             ))}
             {selectedOffer && selectedOfferEligible && (
               <div className="flex justify-between gap-3 text-sm">
-                <span>
+                <span className="min-w-0 break-words">
                   {selectedOffer.rewardQuantity > 1 ? `${selectedOffer.rewardQuantity} x ` : ""}{selectedOffer.rewardItemName}
                   <span className="block text-xs font-bold text-green-700">Special offer</span>
                 </span>
-                <span className="font-bold text-green-700">FREE</span>
+                <span className="shrink-0 font-bold text-green-700">FREE</span>
               </div>
             )}
           </div>
           <div className="mt-5 grid gap-2 border-t border-stone-200 pt-4">
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-3">
               <span>Subtotal</span>
               <span>{formatPrice(totals.subtotal)}</span>
             </div>
             {totals.discount > 0 && (
-              <div className="flex justify-between text-china-red">
-                <span>Promo discount{appliedPromo ? ` (${appliedPromo.code})` : ""}</span>
+              <div className="flex justify-between gap-3 text-china-red">
+                <span className="min-w-0 break-words">Promo discount{appliedPromo ? ` (${appliedPromo.code})` : ""}</span>
                 <span>-{formatPrice(totals.discount)}</span>
               </div>
             )}
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-3">
               <span>Tax</span>
               <span>{formatPrice(totals.tax)}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-3">
               <span>Processing fee</span>
               <span>{formatPrice(totals.processingFee)}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-3">
               <span>Tip</span>
               <span>{formatPrice(totals.tip)}</span>
             </div>
-            <div className="flex justify-between text-2xl font-black">
+            <div className="flex justify-between gap-3 text-xl font-black sm:text-2xl">
               <span>Total</span>
               <span>{formatPrice(totals.total)}</span>
             </div>
@@ -670,12 +670,12 @@ export default function CheckoutPage() {
         </aside>
       </form>
       {items.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-gold/50 bg-[#fff7e8]/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-12px_34px_rgba(44,24,16,0.24)] backdrop-blur lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-gold/50 bg-[#fff7e8]/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.6rem)] pt-2.5 shadow-[0_-12px_34px_rgba(44,24,16,0.24)] backdrop-blur lg:hidden">
           <button
             type="submit"
             form="checkout-form"
             disabled={loading || !orderingOpen}
-            className="focus-ring mx-auto flex min-h-16 w-full max-w-lg items-center justify-center rounded-lg bg-china-red px-4 py-3 text-center text-lg font-black text-white shadow-warm disabled:cursor-not-allowed disabled:bg-stone-400"
+            className="focus-ring mx-auto flex min-h-14 w-full max-w-lg items-center justify-center rounded-lg bg-china-red px-4 py-2.5 text-center text-base font-black text-white shadow-warm disabled:cursor-not-allowed disabled:bg-stone-400"
           >
             {loading ? "Placing order..." : `Place Order - ${formatPrice(totals.total)}`}
           </button>

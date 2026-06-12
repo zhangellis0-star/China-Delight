@@ -39,7 +39,7 @@ export default function CartPage() {
   }, []);
 
   return (
-    <section className={`mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8 ${items.length > 0 ? "pb-32 lg:pb-10" : ""}`}>
+    <section className={`mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-10 lg:px-8 ${items.length > 0 ? "pb-28 lg:pb-10" : ""}`}>
       <h1 className="text-3xl font-black sm:text-4xl">Your cart</h1>
       {items.length === 0 ? (
         <div className="mt-8 rounded-lg border border-stone-200 bg-white p-8 text-center">
@@ -49,19 +49,19 @@ export default function CartPage() {
           </Link>
         </div>
       ) : (
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
+        <div className="mt-6 grid gap-5 sm:mt-8 lg:grid-cols-[1fr_340px] lg:gap-6">
           <div className="grid gap-4">
             {items.map((item) => (
-              <article key={item.cartId} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+              <article key={item.cartId} className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm sm:p-4">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row">
                   <div className="min-w-0">
                     <p className="font-black text-china-red">#{item.number}</p>
-                    <h2 className="break-words text-xl font-black">{item.name}</h2>
+                    <h2 className="break-words text-lg font-black sm:text-xl">{item.name}</h2>
                     <p className="mt-1 break-words text-sm text-stone-600">
                       {customizationText(item.customization)}
                     </p>
                   </div>
-                  <p className="text-xl font-black">{formatPrice(item.unitPrice * item.quantity)}</p>
+                  <p className="text-lg font-black sm:text-xl">{formatPrice(item.unitPrice * item.quantity)}</p>
                 </div>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="inline-flex w-fit items-center rounded-md border border-stone-300">
@@ -88,22 +88,22 @@ export default function CartPage() {
 
           <aside className="grid h-fit gap-4">
             <SpecialOffersShowcase heading="Unlock a free item" />
-            <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-warm">
-            <h2 className="text-2xl font-black">Order total</h2>
-            <div className="mt-5 grid gap-3 text-lg">
-              <div className="flex justify-between">
+            <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-warm sm:p-5">
+            <h2 className="text-xl font-black sm:text-2xl">Order total</h2>
+            <div className="mt-4 grid gap-3 text-base sm:mt-5 sm:text-lg">
+              <div className="flex justify-between gap-3">
                 <span>Subtotal</span>
                 <span>{formatPrice(totals.subtotal)}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-3">
                 <span>Tax</span>
                 <span>{formatPrice(totals.tax)}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-3">
                 <span>Processing fee</span>
                 <span>{formatPrice(totals.processingFee)}</span>
               </div>
-              <div className="flex justify-between border-t border-stone-200 pt-3 text-2xl font-black">
+              <div className="flex justify-between gap-3 border-t border-stone-200 pt-3 text-xl font-black sm:text-2xl">
                 <span>Total</span>
                 <span>{formatPrice(totals.total)}</span>
               </div>
@@ -124,13 +124,13 @@ export default function CartPage() {
             )}
             </div>
           </aside>
-          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-gold/50 bg-[#fff7e8]/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-12px_34px_rgba(44,24,16,0.24)] backdrop-blur lg:hidden">
+          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-china-gold/50 bg-[#fff7e8]/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.6rem)] pt-2.5 shadow-[0_-12px_34px_rgba(44,24,16,0.24)] backdrop-blur lg:hidden">
             {orderingOpen ? (
-              <Link href="/checkout" className="focus-ring mx-auto flex min-h-16 max-w-lg items-center justify-center rounded-lg bg-china-red px-4 py-3 text-center text-lg font-black text-white shadow-warm">
+              <Link href="/checkout" className="focus-ring mx-auto flex min-h-14 max-w-lg items-center justify-center rounded-lg bg-china-red px-4 py-2.5 text-center text-base font-black text-white shadow-warm">
                 Checkout - {formatPrice(totals.total)}
               </Link>
             ) : (
-              <div className="mx-auto flex min-h-16 max-w-lg items-center justify-center rounded-lg bg-stone-400 px-4 py-3 text-center text-sm font-black text-white">
+              <div className="mx-auto flex min-h-14 max-w-lg items-center justify-center rounded-lg bg-stone-400 px-4 py-2.5 text-center text-sm font-black text-white">
                 Checkout unavailable
               </div>
             )}

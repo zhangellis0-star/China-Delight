@@ -8,11 +8,13 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
   background: #fffaf0;
   color: #1f1712;
+  overflow-x: hidden;
 }
 
 button,
@@ -21,8 +23,13 @@ input,
 select,
 textarea {
   font: inherit;
+  max-width: 100%;
 }
 
 .focus-ring {
   @apply focus:outline-none focus:ring-4 focus:ring-china-gold/45;
+}
+
+.mobile-safe * {
+  min-width: 0;
 }

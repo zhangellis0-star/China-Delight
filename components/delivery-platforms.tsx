@@ -3,11 +3,11 @@ import { restaurant } from "@/lib/restaurant";
 
 export function DeliveryPlatforms({ compact = false }: { compact?: boolean }) {
   return (
-    <section className={`${compact ? "" : "mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8"}`}>
-      <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+    <section className={`${compact ? "" : "mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8"}`}>
+      <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
         <p className="font-black uppercase tracking-[0.16em] text-china-red">Delivery</p>
-        <h2 className="mt-2 text-2xl font-black text-china-ink">Delivery is available through DoorDash, Uber Eats, and Grubhub.</h2>
-        <p className="mt-2 leading-7 text-stone-700">Online orders through this website are pickup only.</p>
+        <h2 className="mt-2 text-xl font-black leading-tight text-china-ink sm:text-2xl">Delivery is available through DoorDash, Uber Eats, and Grubhub.</h2>
+        <p className="mt-2 text-sm leading-6 text-stone-700 sm:text-base sm:leading-7">Online orders through this website are pickup only.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {restaurant.deliveryPlatforms.map((platform) =>
             platform.url ? (

@@ -143,10 +143,10 @@ export function SpecialOffersManager() {
   }
 
   return (
-    <div id="admin-special-offers" className="mt-6 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-4 shadow-sm">
+    <div id="admin-special-offers" className="mobile-safe mt-5 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:mt-6 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-black text-china-red">Special Offers</p>
-        <button onClick={load} disabled={loading} className="focus-ring inline-flex items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-bold text-stone-800 disabled:opacity-60">
+        <button onClick={load} disabled={loading} className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-bold text-stone-800 disabled:opacity-60">
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           Refresh
         </button>
@@ -156,7 +156,7 @@ export function SpecialOffersManager() {
       {error && <p className="mt-3 rounded-md bg-red-100 px-3 py-2 text-sm font-bold text-china-red">{error}</p>}
       {message && <p className="mt-3 rounded-md bg-green-100 px-3 py-2 text-sm font-bold text-green-800">{message}</p>}
 
-      <form onSubmit={submitForm} className="mt-4 grid gap-3 rounded-md border border-china-gold/60 bg-white p-3 sm:grid-cols-2">
+      <form onSubmit={submitForm} className="mt-3 grid gap-3 rounded-md border border-china-gold/60 bg-white p-3 sm:mt-4 sm:grid-cols-2">
         <p className="font-black text-stone-800 sm:col-span-2">{form.id ? "Edit special offer" : "New special offer"}</p>
         <label className="grid gap-1 text-sm font-black text-stone-700">
           Title
@@ -225,7 +225,7 @@ export function SpecialOffersManager() {
           />
           Active (customers can see and use this offer)
         </label>
-        <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+        <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
           <button type="submit" disabled={saving} className="focus-ring min-h-11 rounded-md bg-china-red px-4 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
             {saving ? "Saving..." : form.id ? "Update offer" : "Create offer"}
           </button>
@@ -238,29 +238,29 @@ export function SpecialOffersManager() {
       <div className="mt-4 grid gap-2">
         {offers.length === 0 && !loading && <p className="rounded-md border border-china-gold/60 bg-white p-4 text-center font-bold text-stone-600">No special offers yet.</p>}
         {offers.map((offer) => (
-          <div key={offer.id} className="grid gap-2 rounded-md border border-china-gold/50 bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+          <div key={offer.id} className="grid gap-3 rounded-md border border-china-gold/50 bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-black text-stone-900">{offer.title}</span>
+                <span className="min-w-0 break-words font-black text-stone-900">{offer.title}</span>
                 <span className={`rounded-md px-2 py-0.5 text-xs font-black uppercase ${offer.active ? "bg-green-100 text-green-800" : "bg-stone-200 text-stone-700"}`}>
                   {offer.active ? "Active" : "Inactive"}
                 </span>
               </div>
-              {offer.description && <p className="mt-0.5 text-sm font-bold text-stone-600">{offer.description}</p>}
-              <p className="mt-0.5 text-sm font-bold text-stone-700">
+              {offer.description && <p className="mt-0.5 break-words text-sm font-bold text-stone-600">{offer.description}</p>}
+              <p className="mt-0.5 break-words text-sm font-bold text-stone-700">
                 Spend {formatPrice(offer.minimumSubtotal)} → free {offer.rewardQuantity > 1 ? `${offer.rewardQuantity} x ` : ""}{rewardLabel(offer)}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <button onClick={() => editOffer(offer)} className="focus-ring min-h-9 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+            <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+              <button onClick={() => editOffer(offer)} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-2 text-sm font-black text-stone-800 sm:px-3">
                 Edit
               </button>
-              <button onClick={() => toggleActive(offer)} className="focus-ring min-h-9 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+              <button onClick={() => toggleActive(offer)} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-2 text-sm font-black text-stone-800 sm:px-3">
                 {offer.active ? "Disable" : "Enable"}
               </button>
               <button
                 onClick={() => deleteOffer(offer)}
-                className="focus-ring inline-flex min-h-9 items-center gap-1 rounded-md border border-red-200 bg-white px-3 text-sm font-black text-china-red"
+                className="focus-ring inline-flex min-h-10 items-center justify-center gap-1 rounded-md border border-red-200 bg-white px-2 text-sm font-black text-china-red sm:px-3"
               >
                 <Trash2 className="h-4 w-4" />
                 Remove

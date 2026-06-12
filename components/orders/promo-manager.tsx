@@ -166,10 +166,10 @@ export function PromoManager() {
   }
 
   return (
-    <div id="admin-promo" className="mt-6 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-4 shadow-sm">
+    <div id="admin-promo" className="mobile-safe mt-5 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:mt-6 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-black text-china-red">Promo Codes</p>
-        <button onClick={load} disabled={loading} className="focus-ring inline-flex items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-bold text-stone-800 disabled:opacity-60">
+        <button onClick={load} disabled={loading} className="focus-ring inline-flex min-h-10 items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-bold text-stone-800 disabled:opacity-60">
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           Refresh
         </button>
@@ -179,7 +179,7 @@ export function PromoManager() {
       {error && <p className="mt-3 rounded-md bg-red-100 px-3 py-2 text-sm font-bold text-china-red">{error}</p>}
       {message && <p className="mt-3 rounded-md bg-green-100 px-3 py-2 text-sm font-bold text-green-800">{message}</p>}
 
-      <form onSubmit={submitForm} className="mt-4 grid gap-3 rounded-md border border-china-gold/60 bg-white p-3 sm:grid-cols-2">
+      <form onSubmit={submitForm} className="mt-3 grid gap-3 rounded-md border border-china-gold/60 bg-white p-3 sm:mt-4 sm:grid-cols-2">
         <p className="font-black text-stone-800 sm:col-span-2">{form.id ? "Edit promo code" : "New promo code"}</p>
         <label className="grid gap-1 text-sm font-black text-stone-700">
           Code
@@ -268,7 +268,7 @@ export function PromoManager() {
           />
           Active (customers can apply this code)
         </label>
-        <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+        <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
           <button type="submit" disabled={saving} className="focus-ring min-h-11 rounded-md bg-china-red px-4 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
             {saving ? "Saving..." : form.id ? "Update code" : "Create code"}
           </button>
@@ -283,36 +283,36 @@ export function PromoManager() {
         {promoCodes.map((promo) => {
           const expired = isExpired(promo);
           return (
-            <div key={promo.id} className="grid gap-2 rounded-md border border-china-gold/50 bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div key={promo.id} className="grid gap-3 rounded-md border border-china-gold/50 bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-black text-stone-900">{promo.code}</span>
+                  <span className="break-all font-black text-stone-900">{promo.code}</span>
                   <span className={`rounded-md px-2 py-0.5 text-xs font-black uppercase ${promo.active ? "bg-green-100 text-green-800" : "bg-stone-200 text-stone-700"}`}>
                     {promo.active ? "Active" : "Inactive"}
                   </span>
                   {expired && <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-black uppercase text-amber-900">Expired</span>}
                 </div>
                 {promo.description && <p className="mt-0.5 text-sm font-bold text-stone-600">{promo.description}</p>}
-                <p className="mt-0.5 text-sm font-bold text-stone-700">
+                <p className="mt-0.5 break-words text-sm font-bold text-stone-700">
                   {discountSummary(promo)} · {promoDiscountTypeLabel(promo.discount_type)} · {usageSummary(promo)}
                 </p>
-                <p className="mt-0.5 text-xs font-bold text-stone-500">
+                <p className="mt-0.5 break-words text-xs font-bold text-stone-500">
                   {promo.minimum_subtotal != null ? `Min ${formatPrice(Number(promo.minimum_subtotal))}` : "No minimum"}
                   {promo.expires_at ? ` · Expires ${new Date(promo.expires_at).toLocaleDateString()}` : " · No expiration"}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2 sm:justify-end">
-                <button onClick={() => editPromo(promo)} className="focus-ring min-h-9 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+              <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                <button onClick={() => editPromo(promo)} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-2 text-sm font-black text-stone-800 sm:px-3">
                   Edit
                 </button>
-                <button onClick={() => toggleActive(promo)} className="focus-ring min-h-9 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+                <button onClick={() => toggleActive(promo)} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-2 text-sm font-black text-stone-800 sm:px-3">
                   {promo.active ? "Disable" : "Enable"}
                 </button>
                 <button
                   onClick={() => deletePromo(promo)}
                   disabled={(promo.used_count ?? 0) > 0}
                   title={(promo.used_count ?? 0) > 0 ? "Used codes cannot be deleted. Disable instead." : "Delete promo code"}
-                  className="focus-ring inline-flex min-h-9 items-center gap-1 rounded-md border border-red-200 bg-white px-3 text-sm font-black text-china-red disabled:cursor-not-allowed disabled:opacity-50"
+                  className="focus-ring inline-flex min-h-10 items-center justify-center gap-1 rounded-md border border-red-200 bg-white px-2 text-sm font-black text-china-red disabled:cursor-not-allowed disabled:opacity-50 sm:px-3"
                 >
                   <Trash2 className="h-4 w-4" />
                   Delete

@@ -39,12 +39,12 @@ export function SpecialOffersShowcase({ heading = "Special offers", className = 
   if (!offers.length) return null;
 
   return (
-    <section className={`rounded-lg border border-china-gold/60 bg-[#fffaf0] p-5 shadow-sm ${className}`}>
+    <section className={`overflow-hidden rounded-lg border border-china-gold/60 bg-[#fffaf0] p-4 shadow-sm sm:p-5 ${className}`}>
       <div className="flex items-center gap-2 text-china-red">
-        <Gift className="h-5 w-5" />
-        <h2 className="text-xl font-black">{heading}</h2>
+        <Gift className="h-5 w-5 shrink-0" />
+        <h2 className="text-lg font-black leading-tight sm:text-xl">{heading}</h2>
       </div>
-      <div className="mt-4 grid gap-4">
+      <div className="-mx-4 mt-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0">
         {offers.map((offer) => {
           const threshold = Math.max(0, offer.minimumSubtotal);
           const unlocked = subtotal >= threshold;
@@ -52,14 +52,14 @@ export function SpecialOffersShowcase({ heading = "Special offers", className = 
           const pct = threshold > 0 ? Math.min(100, Math.round((subtotal / threshold) * 100)) : 100;
           const rewardLabel = `${offer.rewardQuantity > 1 ? `${offer.rewardQuantity} x ` : ""}${offer.rewardItemName}`;
           return (
-            <div key={offer.id} className="rounded-md border border-china-gold/50 bg-white p-4">
+            <div key={offer.id} className="w-[min(82vw,20rem)] shrink-0 snap-start rounded-md border border-china-gold/50 bg-white p-3 sm:w-auto sm:p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-black text-stone-900">{offer.title}</p>
+                <p className="min-w-0 break-words font-black leading-tight text-stone-900">{offer.title}</p>
                 <span className={`rounded-md px-2 py-0.5 text-xs font-black uppercase ${unlocked ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}`}>
                   {unlocked ? "Unlocked" : `Spend ${formatPrice(threshold)}`}
                 </span>
               </div>
-              <p className="mt-1 text-sm font-bold text-green-700">Free: {rewardLabel}</p>
+              <p className="mt-1 break-words text-sm font-bold text-green-700">Free: {rewardLabel}</p>
               {offer.description && <p className="mt-1 text-sm text-stone-600">{offer.description}</p>}
               <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
                 <div className={`h-full rounded-full transition-all ${unlocked ? "bg-china-green" : "bg-china-gold"}`} style={{ width: `${pct}%` }} />

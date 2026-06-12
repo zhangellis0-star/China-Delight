@@ -68,10 +68,10 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
 
   return (
     <article className="rounded-lg border border-red-900/10 bg-white p-3 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black text-china-red">#{item.number}</p>
-          <h3 className="mt-0.5 text-lg font-black leading-tight text-china-ink">{item.name}</h3>
+          <h3 className="mt-0.5 break-words text-base font-black leading-tight text-china-ink sm:text-lg">{item.name}</h3>
           {item.chineseName && <p className="mt-0.5 text-sm font-semibold text-stone-600">{item.chineseName}</p>}
           {item.description && <p className="mt-1.5 text-sm leading-6 text-stone-600">{item.description}</p>}
           {item.spicy && <p className="mt-1.5 inline-flex rounded-md bg-red-50 px-2 py-0.5 text-xs font-black uppercase text-china-red">Hot & Spicy</p>}
@@ -80,14 +80,14 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
           {(comboItem || item.prices.combo !== undefined) && <p className="mt-1.5 rounded-md bg-red-50 px-2 py-1 text-xs font-bold text-china-red">Combo includes Pork Fried Rice and Egg Roll.</p>}
           {item.reviewNote && <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">{item.reviewNote}</p>}
         </div>
-        <p className="shrink-0 text-lg font-black text-china-deep">{hasReviewPrice(item, size) ? "NEEDS REVIEW" : formatPrice(price)}</p>
+        <p className="shrink-0 text-base font-black text-china-deep sm:text-lg">{hasReviewPrice(item, size) ? "NEEDS REVIEW" : formatPrice(price)}</p>
       </div>
 
       <div className="mt-3 grid gap-2">
         {sizes.length > 1 && (
           <label className="grid gap-1 text-sm font-bold text-stone-700">
             Size
-            <select value={size} onChange={(event) => setSize(event.target.value as MenuPriceKey)} className="focus-ring h-11 rounded-md border border-stone-300 px-3">
+            <select value={size} onChange={(event) => setSize(event.target.value as MenuPriceKey)} className="focus-ring h-12 rounded-md border border-stone-300 px-3">
               {sizes.map((key) => (
                 <option key={key} value={key}>
                   {sizeLabels[key]} - {formatMenuPrice(item.prices[key])}
@@ -103,7 +103,7 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
               type="button"
               onClick={() => setShowOptions((open) => !open)}
               aria-expanded={showOptions}
-              className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700"
+              className="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-bold text-stone-700"
             >
               <SlidersHorizontal className="h-4 w-4" />
               {showOptions ? "Hide options" : "Customize"}
@@ -114,7 +114,7 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
                 {!isAppetizer && (
                   <label className="grid gap-1 text-sm font-bold text-stone-700">
                     Spice level
-                    <select value={spiceLevel} onChange={(event) => setSpiceLevel(event.target.value as (typeof spiceLevels)[number])} className="focus-ring h-11 rounded-md border border-stone-300 bg-white px-3">
+                      <select value={spiceLevel} onChange={(event) => setSpiceLevel(event.target.value as (typeof spiceLevels)[number])} className="focus-ring h-12 rounded-md border border-stone-300 bg-white px-3">
                       {spiceLevels.map((level) => (
                         <option key={level}>{level}</option>
                       ))}
@@ -126,7 +126,7 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="grid gap-1 text-sm font-bold text-stone-700">
                       Lunch rice
-                      <select value={lunchRice} onChange={(event) => setLunchRice(event.target.value as LunchRiceChoice)} className="focus-ring h-11 rounded-md border border-stone-300 bg-white px-3">
+                      <select value={lunchRice} onChange={(event) => setLunchRice(event.target.value as LunchRiceChoice)} className="focus-ring h-12 rounded-md border border-stone-300 bg-white px-3">
                         {lunchRiceChoices.map((choice) => (
                           <option key={choice}>{choice}</option>
                         ))}
@@ -134,7 +134,7 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
                     </label>
                     <label className="grid gap-1 text-sm font-bold text-stone-700">
                       Lunch side
-                      <select value={lunchSide} onChange={(event) => setLunchSide(event.target.value as LunchSideChoice)} className="focus-ring h-11 rounded-md border border-stone-300 bg-white px-3">
+                      <select value={lunchSide} onChange={(event) => setLunchSide(event.target.value as LunchSideChoice)} className="focus-ring h-12 rounded-md border border-stone-300 bg-white px-3">
                         {lunchSideChoices.map((choice) => (
                           <option key={choice}>{choice}</option>
                         ))}
@@ -155,8 +155,8 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
 
       {!lunchAvailable && <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">{lunchAvailabilityMessage}</p>}
       {matchingQuantity > 0 ? (
-        <div className="mt-3 grid grid-cols-[44px_1fr_44px] items-center rounded-md border border-china-red bg-red-50">
-          <button type="button" onClick={handleMinus} className="focus-ring flex min-h-11 items-center justify-center text-china-red" aria-label={`Remove one ${item.name}`}>
+        <div className="mt-3 grid grid-cols-[48px_1fr_48px] items-center rounded-md border border-china-red bg-red-50">
+          <button type="button" onClick={handleMinus} className="focus-ring flex min-h-12 items-center justify-center text-china-red" aria-label={`Remove one ${item.name}`}>
             <Minus className="h-5 w-5" />
           </button>
           <span className="text-center text-lg font-black text-china-red">{matchingQuantity}</span>
@@ -164,14 +164,14 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
             type="button"
             onClick={handleAdd}
             disabled={hasReviewPrice(item, size) || !lunchAvailable || soldOut}
-            className="focus-ring flex min-h-11 items-center justify-center text-china-red disabled:cursor-not-allowed disabled:text-stone-400"
+            className="focus-ring flex min-h-12 items-center justify-center text-china-red disabled:cursor-not-allowed disabled:text-stone-400"
             aria-label={`Add one ${item.name}`}
           >
             <Plus className="h-5 w-5" />
           </button>
         </div>
       ) : (
-        <button disabled={hasReviewPrice(item, size) || !lunchAvailable || soldOut} onClick={handleAdd} className="focus-ring mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-china-red px-4 py-2.5 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
+        <button disabled={hasReviewPrice(item, size) || !lunchAvailable || soldOut} onClick={handleAdd} className="focus-ring mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-china-red px-4 py-2.5 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
           <Plus className="h-5 w-5" />
           {hasReviewPrice(item, size) ? "Price Needs Review" : soldOut ? "Sold Out Today" : !lunchAvailable ? "Lunch Unavailable" : "Quick Add"}
         </button>
