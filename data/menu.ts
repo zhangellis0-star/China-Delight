@@ -311,16 +311,16 @@ const menuItemSplits: Record<string, MenuSplit[]> = {
     { id: "spring-roll", number: "2B", name: "Spring Roll" }
   ],
   "crab-rangoon": [
-    { id: "crab-rangoon", number: "5A", name: "Crab Rangoon (10)" },
-    { id: "cheese-wonton", number: "5B", name: "Cheese Wonton" }
+    { id: "crab-rangoon", number: "6A", name: "Crab Rangoon (10)" },
+    { id: "cheese-wonton", number: "6B", name: "Cheese Wonton" }
   ],
   dumplings: [
-    { id: "fried-dumplings", number: "15A", name: "Fried Dumpling (8)" },
-    { id: "steamed-dumplings", number: "15B", name: "Steamed Dumpling (8)" }
+    { id: "fried-dumplings", number: "14A", name: "Fried Dumpling (8)" },
+    { id: "steamed-dumplings", number: "14B", name: "Steamed Dumpling (8)" }
   ],
   "vegetable-dumplings": [
-    { id: "fried-vegetable-dumplings", number: "15C", name: "Fried Vegetable Dumpling (8)" },
-    { id: "steamed-vegetable-dumplings", number: "15D", name: "Steamed Vegetable Dumpling (8)" }
+    { id: "fried-vegetable-dumplings", number: "15A", name: "Fried Vegetable Dumpling (8)" },
+    { id: "steamed-vegetable-dumplings", number: "15B", name: "Steamed Vegetable Dumpling (8)" }
   ],
   "shrimp-egg-foo-young": [
     { id: "shrimp-egg-foo-young", number: "96A", name: "Shrimp Egg Foo Young" },
