@@ -513,7 +513,7 @@ export default function CheckoutPage() {
           <div className="rounded-md border border-stone-200 bg-china-paper p-4">
             <p className="font-black">Optional tip</p>
             <p className="mt-1 text-sm leading-6 text-stone-700">No tip is selected by default. Thank you for supporting the staff.</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-5">
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
               {([
                 ["none", "No tip"],
                 ["18", "18%"],

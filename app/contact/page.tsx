@@ -34,7 +34,7 @@ export default function ContactPage() {
             Rt 44, Ledgbrook Plaza
           </p>
         </div>
-        <iframe title="China Delight map" src={mapSrc} className="min-h-[520px] w-full rounded-lg border border-stone-200 bg-white" loading="lazy" />
+        <iframe title="China Delight map" src={mapSrc} className="h-[320px] w-full rounded-lg border border-stone-200 bg-white sm:h-[420px] lg:min-h-[520px]" loading="lazy" />
       </div>
       <div className="mt-8">
         <DeliveryPlatforms compact />

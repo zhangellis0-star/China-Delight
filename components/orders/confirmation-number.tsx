@@ -93,7 +93,7 @@ export function ConfirmationNumber() {
 
   return (
     <div className="mt-3 rounded-lg bg-white p-5 text-left shadow-warm">
-      <p className="text-center text-4xl font-black text-china-red">{orderNumber}</p>
+      <p className="break-words text-center text-3xl font-black text-china-red sm:text-4xl">{orderNumber}</p>
       {supabaseOrder ? (
         <div className="mt-5 grid gap-3 text-stone-800">
           <p>

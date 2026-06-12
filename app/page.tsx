@@ -16,10 +16,10 @@ export default function HomePage() {
       <section className="bg-[radial-gradient(circle_at_top_left,#f5b642_0%,#f5b642_10%,transparent_22%),linear-gradient(135deg,#0f5f56_0%,#2f8d7c_46%,#dff4f2_100%)] text-white">
         <div className="mx-auto grid min-h-[calc(100vh-88px)] max-w-7xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:px-8">
           <div>
-            <p className="inline-flex rounded-full border border-china-gold/40 bg-white/10 px-4 py-2 text-sm font-black uppercase tracking-[0.2em] text-china-gold">
+            <p className="inline-flex max-w-full rounded-full border border-china-gold/40 bg-white/10 px-3 py-2 text-[11px] font-black uppercase leading-snug tracking-[0.12em] text-china-gold sm:px-4 sm:text-sm sm:tracking-[0.2em]">
               {restaurant.type}
             </p>
-            <h1 className="mt-4 text-5xl font-black leading-tight sm:text-6xl lg:text-7xl">{restaurant.name}</h1>
+            <h1 className="mt-4 text-4xl font-black leading-tight sm:text-6xl lg:text-7xl">{restaurant.name}</h1>
             <p className="mt-5 max-w-xl text-xl leading-8 text-teal-50">
               Fresh Chinese favorites for pickup, take out, and dine in at Ledgbrook Plaza in Winsted.
             </p>
