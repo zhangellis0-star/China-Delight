@@ -28,6 +28,11 @@ RESEND_API_KEY=
 ORDER_FROM_EMAIL=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+GOOGLE_SHEETS_ENABLED=true
+GOOGLE_SHEETS_SPREADSHEET_ID=
+GOOGLE_SHEETS_ORDERS_SHEET_NAME=Orders
+GOOGLE_SERVICE_ACCOUNT_EMAIL=
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=
 NEXT_PUBLIC_TAX_RATE=0.0735
 NEXT_PUBLIC_PROCESSING_FEE_RATE=0.06
 TWILIO_ACCOUNT_SID=
@@ -35,7 +40,7 @@ TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
 ```
 
-Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Stripe keys, `STRIPE_WEBHOOK_SECRET`, Resend email variables, Telegram variables if you want phone notifications, tax/fee rates, and Twilio variables when real SMS is desired.
+Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Stripe keys, `STRIPE_WEBHOOK_SECRET`, Resend email variables, Telegram variables if you want phone notifications, Google Sheets variables if you want live sales sync, tax/fee rates, and Twilio variables when real SMS is desired.
 
 ## Pricing (tax + processing fee)
 
@@ -136,6 +141,39 @@ TELEGRAM_CHAT_ID=
 ```
 
 Create the bot with BotFather, send the bot a message from the Telegram account/group that should receive alerts, then use that chat ID. The checkout route sends Telegram only after the Supabase order and order items are saved. If Telegram is not configured or fails, checkout still succeeds and the failure is logged without exposing the bot token.
+
+## Google Sheets Live Sales Sync
+
+New cash/pay-at-pickup orders can be appended to a Google Sheet for live sales tracking. The sync is optional and server-side only. Checkout saves the order and order items to Supabase first, then starts a best-effort Google Sheets append. If the Google Sheets variables are missing, sync is disabled. If the Google Sheets API fails, checkout still succeeds.
+
+Set:
+
+```bash
+GOOGLE_SHEETS_ENABLED=true
+GOOGLE_SHEETS_SPREADSHEET_ID=
+GOOGLE_SHEETS_ORDERS_SHEET_NAME=Orders
+GOOGLE_SERVICE_ACCOUNT_EMAIL=
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=
+```
+
+Setup:
+
+1. In Google Cloud, create or choose a project.
+2. Enable the Google Sheets API.
+3. Create a service account and generate a JSON key.
+4. Copy the service account `client_email` into `GOOGLE_SERVICE_ACCOUNT_EMAIL`.
+5. Copy the JSON key's `private_key` into `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`. Escaped `\n` newlines are supported.
+6. Create or choose the tracking spreadsheet.
+7. Share the spreadsheet with the service account email as an editor.
+8. Copy the spreadsheet ID from the URL into `GOOGLE_SHEETS_SPREADSHEET_ID`.
+9. Set `GOOGLE_SHEETS_ORDERS_SHEET_NAME` to the tab name that should receive order rows.
+10. Redeploy or restart after changing environment variables.
+
+The app auto-creates the header row when the target tab is empty. Columns are:
+
+`Created Date/Time`, `Order Number`, `Customer Name`, `Customer Phone`, `Customer Email`, `Status`, `Payment Method`, `Payment Status`, `Pickup Type`, `Scheduled Pickup Time`, `Subtotal`, `Discount`, `Tax`, `Processing Fee`, `Tip`, `Total`, `4% Website Fee`, `Promo Code`, `Special Offer / Free Item`, `Item Count`, `Item Summary`, `Customer Notes`, `Test Order?`, `Cancelled?`, `Count Toward Sales?`
+
+`4% Website Fee` is calculated from the final customer total after discounts, tax, processing fee, and tip. Test orders are marked when the order number starts with `TEST`; cancelled orders and test orders are marked as not counting toward sales. Because rows are appended after checkout succeeds, a retry after a transient server/runtime interruption could append a duplicate row; use `Order Number` as the unique reference when reviewing the Sheet.
 
 ## Phone Verification
 

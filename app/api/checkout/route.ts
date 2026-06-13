@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { menuItems } from "@/data/menu";
 import { sendOrderConfirmationEmail } from "@/lib/email";
+import { appendOrderToGoogleSheets } from "@/lib/google-sheets";
 import { closedOrderingMessage, isLunchAvailable, isLunchItem, lunchAvailabilityMessage, nextOpeningLabel, validateScheduledPickupISO } from "@/lib/order-rules";
 import { getOperationalSettings, orderingAllowed } from "@/lib/operations";
 import { calculateCart, customizationUpcharge, getItemPrice, hasReviewPrice } from "@/lib/pricing";
@@ -161,12 +162,14 @@ export async function POST(request: Request) {
   // is a final safety net). The combined discount is clamped to the subtotal in calculateCart, so
   // the total can never go negative.
   let offerDiscount = 0;
+  let specialOfferLabel: string | null = null;
   if (body.specialOfferId) {
     const offers = await getSpecialOffers();
     const offer = offers.find((candidate) => candidate.id === body.specialOfferId);
     if (offer) {
       const result = computeOffer(offer, items, subtotal);
       if (result.applied) {
+        specialOfferLabel = offer.title;
         for (const ref of result.freeItems) {
           const line = buildFreeLine(ref.itemId, ref.quantity, offer);
           if (line) items.push(line);
@@ -244,6 +247,25 @@ export async function POST(request: Request) {
   }
 
   const savedTotals = { ...finalTotals, promoCode };
+  try {
+    await appendOrderToGoogleSheets({
+      orderNumber,
+      createdAt: new Date(),
+      customer: body.customer,
+      status: "new",
+      paymentMethod,
+      paymentStatus: "unpaid",
+      totals: savedTotals,
+      items,
+      specialOfferLabel
+    });
+  } catch (sheetsError) {
+    console.warn("[checkout] Google Sheets sync failed", {
+      orderNumber,
+      error: sheetsError instanceof Error ? sheetsError.message : "Unknown Google Sheets error"
+    });
+  }
+
   // Count the promo use only once the order and its items are safely saved.
   if (promoRecord) {
     const { error: usageError } = await supabase
