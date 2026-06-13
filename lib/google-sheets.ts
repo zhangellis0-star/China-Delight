@@ -201,25 +201,65 @@ async function appendOrder(input: GoogleSheetsOrderSyncInput, signal?: AbortSign
     yesNo(!isTestOrder && !isCancelled)
   ];
 
-  const response = await fetchWithSignal(sheetsUrl(config.spreadsheetId, sheetRange(config.sheetName, "A:Y"), "?valueInputOption=RAW&insertDataOption=INSERT_ROWS"), {
+  // Google Sheets append must be POST .../values/{range}:append — the ":append" suffix is
+  // required. A plain POST to /values/{range} is not a valid method and returns 404, which is
+  // why no rows were appended even though the header read/update (GET/PUT) succeeded. The
+  // ":append" must sit after the encoded range but before the query string.
+  const appendUrl = `${sheetsApiBase}/${encodeURIComponent(config.spreadsheetId)}/values/${encodeURIComponent(sheetRange(config.sheetName, "A:Y"))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const response = await fetchWithSignal(appendUrl, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ values: [row] })
   }, signal);
-  if (!response.ok) throw new Error(`Google Sheets append failed with status ${response.status}.`);
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).slice(0, 300);
+    throw new Error(`Google Sheets append failed with status ${response.status}${detail ? `: ${detail}` : ""}.`);
+  }
   return { synced: true, skipped: false };
 }
 
 export async function appendOrderToGoogleSheets(input: GoogleSheetsOrderSyncInput) {
+  const enabled = isEnabled();
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
+  const sheetName = process.env.GOOGLE_SHEETS_ORDERS_SHEET_NAME?.trim();
+  const credentialsPresent = Boolean(
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim()
+  );
+
+  // Safe diagnostics only — never log the private key, service-account email, or access token.
+  console.log("[google-sheets] sync start", {
+    orderNumber: input.orderNumber,
+    enabled,
+    spreadsheetIdPresent: Boolean(spreadsheetId),
+    sheetName: sheetName ?? null,
+    credentialsPresent
+  });
+
+  if (!enabled) {
+    console.log("[google-sheets] sync disabled (GOOGLE_SHEETS_ENABLED is off)", { orderNumber: input.orderNumber });
+    return { synced: false, skipped: true };
+  }
+  if (!spreadsheetId || !sheetName || !credentialsPresent) {
+    console.warn("[google-sheets] sync skipped — missing config", {
+      orderNumber: input.orderNumber,
+      spreadsheetIdPresent: Boolean(spreadsheetId),
+      sheetNamePresent: Boolean(sheetName),
+      credentialsPresent
+    });
+    return { synced: false, skipped: true };
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), syncTimeoutMs);
   try {
-    return await appendOrder(input, controller.signal);
+    const result = await appendOrder(input, controller.signal);
+    console.log("[google-sheets] append success", { orderNumber: input.orderNumber, sheetName });
+    return result;
   } catch (error) {
-    console.warn("[google-sheets] order sync failed", {
-      orderNumber: input.orderNumber,
-      error: error instanceof Error && error.name === "AbortError" ? `Timed out after ${syncTimeoutMs}ms.` : error instanceof Error ? error.message : "Unknown Google Sheets error"
-    });
+    const message = error instanceof Error && error.name === "AbortError"
+      ? `Timed out after ${syncTimeoutMs}ms.`
+      : error instanceof Error ? error.message : "Unknown Google Sheets error";
+    console.warn("[google-sheets] append failed", { orderNumber: input.orderNumber, sheetName, error: message });
     return { synced: false, skipped: false, error: "Google Sheets sync failed." };
   } finally {
     clearTimeout(timeout);
