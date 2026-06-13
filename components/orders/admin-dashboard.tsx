@@ -140,32 +140,19 @@ type DailyReportDetail = {
 type DailyReportRecent = Pick<DailyReportDetail, "date" | "dateLabel" | "testOrdersExcluded" | "summary">;
 
 const statuses: OrderStatus[] = ["new", "accepted", "preparing", "ready", "picked_up", "completed", "cancelled"];
-const filterTabs: Array<{ value: AdminFilter; label: string }> = [
-  { value: "active", label: "Active" },
-  { value: "new", label: "New" },
-  { value: "accepted", label: "Accepted" },
-  { value: "preparing", label: "Preparing" },
-  { value: "ready", label: "Ready" },
-  { value: "past", label: "Past Orders" },
-  { value: "picked_up", label: "Picked Up" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "all", label: "All" }
-];
 const adminSections: Array<{ value: AdminSection; label: string }> = [
-  { value: "ordering", label: "Online Ordering Status" },
-  { value: "orders", label: "Current Orders" },
-  { value: "sold-out", label: "Sold Out Items" },
+  { value: "orders", label: "Orders" },
+  { value: "past-orders", label: "Past Orders" },
+  { value: "summary", label: "Daily Summary" },
   { value: "reports", label: "Reports / Export" },
-  { value: "settings", label: "Settings Info" },
   { value: "promo", label: "Promo Codes" },
   { value: "special-offers", label: "Special Offers" },
-  { value: "summary", label: "Daily Summary" },
-  { value: "past-orders", label: "Past Orders" }
+  { value: "sold-out", label: "Sold Out Items" },
+  { value: "ordering", label: "Online Ordering Status" },
+  { value: "settings", label: "Settings Info" }
 ];
 const activeStatuses: OrderStatus[] = ["new", "accepted", "preparing", "ready"];
 const pastStatuses: OrderStatus[] = ["picked_up", "completed", "cancelled"];
-const quickStatuses: OrderStatus[] = ["preparing", "ready", "picked_up", "cancelled"];
 const acceptReadyMinuteOptions = [5, 15, 25];
 const kitchenPrintStorageKey = "china-delight-kitchen-print-statuses";
 const spiceLevels = ["None", "Mild", "Medium", "Hot", "Extra Hot"] as const;
@@ -212,10 +199,6 @@ function paymentLabel(method?: PaymentMethod, status?: PaymentStatus) {
   return "Stripe - Awaiting payment";
 }
 
-function pickupLabel(order: AdminOrder) {
-  return order.pickup_time_type === "scheduled" && order.scheduled_pickup_time ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
-}
-
 function readyLabel(order: AdminOrder) {
   const time = confirmedReadyTime(order.estimated_ready_at);
   if (!time) return "Not set — accept the order to set a ready time";
@@ -226,11 +209,6 @@ function statusLabel(status: OrderStatus | AdminFilter) {
   if (status === "picked_up") return "Picked Up";
   if (status === "past") return "Past Orders";
   return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function emailErrorLabel(label: string, error?: string | null) {
-  if (!error) return null;
-  return `${label} failed: ${error}`;
 }
 
 function loadKitchenPrintStatus() {
@@ -360,7 +338,7 @@ export function AdminDashboard() {
   const [updatingOrders, setUpdatingOrders] = useState<Set<string>>(new Set());
   const [customReadyMinutes, setCustomReadyMinutes] = useState<Record<string, string>>({});
   const [acceptingOrder, setAcceptingOrder] = useState<string | null>(null);
-  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | null>(null);
   const [operations, setOperations] = useState<AdminOperations | null>(null);
   const [operationsError, setOperationsError] = useState<string | null>(null);
   const [soldOutSelection, setSoldOutSelection] = useState(menuItems[0]?.id ?? "");
@@ -593,14 +571,6 @@ export function AdminDashboard() {
     return () => window.clearInterval(timer);
   }, [loadOrders, loadOperations]);
 
-  const visible = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return orders.filter((order) => {
-      const text = `${order.order_number} ${order.customer_name} ${order.customer_phone} ${order.order_items.map((item) => item.item_name).join(" ")}`.toLowerCase();
-      return matchesFilter(order, filter) && (!normalized || text.includes(normalized));
-    });
-  }, [orders, query, filter]);
-
   // Repeat the alert while any order is still "new"; stop as soon as none remain (every
   // new order accepted/rejected/cancelled) or sound is muted/blocked.
   useEffect(() => {
@@ -790,15 +760,6 @@ export function AdminDashboard() {
     }
   }
 
-  function toggleExpanded(orderNumber: string) {
-    setExpandedOrders((current) => {
-      const next = new Set(current);
-      if (next.has(orderNumber)) next.delete(orderNumber);
-      else next.add(orderNumber);
-      return next;
-    });
-  }
-
   async function copyPhone(phone: string) {
     await navigator.clipboard?.writeText(phone).catch(() => undefined);
   }
@@ -846,21 +807,11 @@ export function AdminDashboard() {
     });
   }, [networkPrintingOrders, orders, printKitchenTicket, printStatusLoaded]);
 
-  function openAdminSection(section: AdminSection, label?: string) {
+  function openAdminSection(section: AdminSection) {
     setActiveSection(section);
     setAdminMenuOpen(false);
-    if (label === "Past Orders") setFilter("past");
-    if (label === "Current Orders") setFilter("active");
-    const targetId =
-      section === "summary" ? "admin-summary" :
-      section === "sold-out" ? "admin-sold-out" :
-      section === "ordering" ? "admin-ordering-status" :
-      section === "reports" ? "admin-reports" :
-      section === "promo" ? "admin-promo" :
-      section === "special-offers" ? "admin-special-offers" :
-      section === "settings" ? "admin-settings" :
-      "admin-orders";
-    window.requestAnimationFrame(() => document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    setSelectedOrderNumber(null);
+    if (section === "past-orders") setFilter("past");
   }
 
   function openEditOrder(order: AdminOrder) {
@@ -1145,33 +1096,128 @@ export function AdminDashboard() {
       .slice(0, 8);
   })();
 
+  const selectedOrder = selectedOrderNumber ? orders.find((order) => order.order_number === selectedOrderNumber) ?? null : null;
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchesQuery = (order: AdminOrder) => {
+    if (!normalizedQuery) return true;
+    const text = `${order.order_number} ${order.customer_name} ${order.customer_phone} ${order.order_items.map((item) => item.item_name).join(" ")}`.toLowerCase();
+    return text.includes(normalizedQuery);
+  };
+  const activeBoard = orders.filter((order) => activeStatuses.includes(order.status) && matchesQuery(order));
+  const newColumn = activeBoard.filter((order) => order.status === "new");
+  // Right column groups every accepted/preparing/ready order (work in progress); "ready" cards
+  // surface a "Mark Picked Up" action so a finished order can be cleared off the active board.
+  const prepColumn = activeBoard.filter((order) => order.status !== "new");
+  const pastBoard = orders.filter((order) => pastStatuses.includes(order.status) && matchesFilter(order, filter) && matchesQuery(order));
+  const sectionTitles: Record<AdminSection, string> = {
+    orders: "Orders",
+    "past-orders": "Past Orders",
+    summary: "Daily Summary",
+    reports: "Reports / Export",
+    promo: "Promo Codes",
+    "special-offers": "Special Offers",
+    "sold-out": "Sold Out Items",
+    ordering: "Online Ordering Status",
+    settings: "Settings Info"
+  };
+
+  // The single primary action for a card/detail view, chosen by status: New -> Accept,
+  // accepted/preparing -> Mark Ready, ready -> Mark Picked Up (which clears it off the board).
+  function primaryActionFor(order: AdminOrder): { label: string; className: string; run: () => void } | null {
+    if (order.status === "new") return { label: "Accept Order", className: "bg-china-red text-white", run: () => setAcceptingOrder(order.order_number) };
+    if (order.status === "accepted" || order.status === "preparing") return { label: "Mark Ready", className: "bg-china-green text-white", run: () => updateStatus(order.order_number, "ready") };
+    if (order.status === "ready") return { label: "Mark Picked Up", className: "bg-emerald-600 text-white", run: () => { updateStatus(order.order_number, "picked_up"); setSelectedOrderNumber(null); } };
+    return null;
+  }
+
+  function renderOrderCard(order: AdminOrder) {
+    const isTestOrder = order.order_number.toUpperCase().startsWith("TEST");
+    const itemCount = order.order_items.reduce((sum, item) => sum + item.quantity, 0);
+    const printState = kitchenPrintStatus[order.order_number];
+    const scheduled = order.pickup_time_type === "scheduled" && Boolean(order.scheduled_pickup_time);
+    const busy = updatingOrders.has(order.order_number);
+    const primary = primaryActionFor(order);
+    const firstItems = order.order_items.slice(0, 2).map((item) => `${item.quantity}x ${item.item_name}`).join(", ");
+    const extraItems = order.order_items.length - 2;
+    const cardTone = isTestOrder
+      ? "border-2 border-dashed border-purple-400 bg-purple-50"
+      : order.status === "new"
+        ? "border-2 border-china-red bg-red-50"
+        : "border-china-gold/50 bg-white";
+    return (
+      <article
+        key={order.order_number}
+        onClick={() => setSelectedOrderNumber(order.order_number)}
+        className={`focus-ring cursor-pointer rounded-lg border p-3 shadow-sm transition hover:shadow-md ${cardTone}`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="break-all font-black text-china-red">{order.order_number}</span>
+          <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-black uppercase ${statusStyles[order.status]}`}>{statusLabel(order.status)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <h3 className="truncate text-base font-black text-stone-900">{order.customer_name}</h3>
+          <span className="shrink-0 text-base font-black">{formatPrice(order.total)}</span>
+        </div>
+        {scheduled ? (
+          <p className="mt-1 inline-flex rounded-md bg-china-gold px-2 py-1 text-xs font-black uppercase text-china-ink">Scheduled · {formatPickupDateTime(order.scheduled_pickup_time as string)}</p>
+        ) : (
+          <p className="mt-1 text-xs font-bold text-stone-600">Pickup: ASAP</p>
+        )}
+        <p className="mt-1 truncate text-xs font-bold text-stone-600">
+          {order.customer_phone} · {itemCount} item{itemCount === 1 ? "" : "s"}{firstItems ? ` · ${firstItems}` : ""}{extraItems > 0 ? ` +${extraItems}` : ""}
+        </p>
+        <p className="mt-0.5 text-[11px] font-bold text-stone-500">{paymentLabel(order.payment_method, order.payment_status)}</p>
+        {isTestOrder && <p className="mt-1 inline-flex rounded-md bg-purple-600 px-2 py-0.5 text-[10px] font-black uppercase text-white">Test order</p>}
+        {primary && (
+          <button
+            onClick={(event) => { event.stopPropagation(); primary.run(); }}
+            disabled={busy}
+            className={`focus-ring mt-2 min-h-11 w-full rounded-md px-3 text-sm font-black shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${primary.className}`}
+          >
+            {busy ? "Saving..." : primary.label}
+          </button>
+        )}
+        {printState?.status === "failed" && <p className="mt-1 text-[11px] font-black uppercase text-amber-700">Kitchen print failed — open to retry</p>}
+        {printState?.status === "printed" && <p className="mt-1 text-[11px] font-black uppercase text-green-700">Kitchen ticket printed</p>}
+      </article>
+    );
+  }
+
   return (
     <section className="mx-auto max-w-7xl overflow-hidden bg-[linear-gradient(180deg,#fff7e8,#f4fbfb)] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="font-black uppercase tracking-[0.16em] text-china-red">Admin</p>
-          <h1 className="mt-2 text-3xl font-black sm:text-4xl">Orders dashboard</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setAdminMenuOpen(true)}
+            aria-label="Open admin menu"
+            className="focus-ring inline-flex h-12 w-12 items-center justify-center rounded-md border border-china-gold/70 bg-[#fff7e8] text-stone-900 shadow-sm"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-china-red">Admin</p>
+            <h1 className="text-2xl font-black sm:text-3xl">{sectionTitles[activeSection]}</h1>
+          </div>
         </div>
-        <div className="grid gap-2 sm:flex sm:flex-wrap sm:gap-3">
-          <p className="rounded-md border border-china-gold/60 bg-[#fff7e8] px-3 py-2.5 text-center font-bold text-stone-800 shadow-sm sm:px-4 sm:py-3">{visible.length} visible orders</p>
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => loadOrders({ manual: true })}
             disabled={refreshing || updatingOrders.size > 0}
-            className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2.5 font-bold text-stone-800 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-3"
+            className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-3 font-bold text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh now
+            <span className="hidden sm:inline">Refresh</span>
           </button>
-          <button onClick={toggleMute} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2.5 font-bold text-stone-800 sm:px-4 sm:py-3">
+          <button onClick={toggleMute} className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-3 font-bold text-stone-800">
             {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-            {muted ? "Unmute" : audioBlocked ? "Enable sound" : "Mute"}
+            <span className="hidden sm:inline">{muted ? "Unmute" : audioBlocked ? "Enable sound" : "Mute"}</span>
           </button>
-          <button onClick={logout} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 py-2.5 font-bold text-stone-800 sm:px-4 sm:py-3">
+          <button onClick={logout} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 py-3 font-bold text-stone-800">
             Sign out
           </button>
         </div>
       </div>
-      <div className="mt-4 flex flex-col gap-2 text-sm font-bold text-stone-600 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="mt-3 flex flex-col gap-2 text-sm font-bold text-stone-600 sm:flex-row sm:flex-wrap sm:items-center">
         <span>Auto-refreshing every 15 seconds.</span>
         <span>{lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Loading latest orders..."}</span>
         {refreshError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{refreshError}</span>}
@@ -1179,44 +1225,22 @@ export function AdminDashboard() {
         {audioBlocked && !muted && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">Browser blocked sound. Click Enable sound once to allow alerts.</span>}
       </div>
 
-      <div className="mt-5 lg:hidden">
-        <button
-          onClick={() => setAdminMenuOpen((current) => !current)}
-          className="focus-ring flex min-h-12 w-full items-center justify-between rounded-md border border-china-gold/70 bg-[#fff7e8] px-4 font-black text-stone-900 shadow-sm"
-        >
-          <span className="inline-flex items-center gap-2">
-            <Menu className="h-5 w-5" />
-            Admin menu
-          </span>
-          {adminMenuOpen ? <X className="h-5 w-5" /> : null}
-        </button>
-        {adminMenuOpen && (
-          <div className="mt-2 grid gap-1 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-2 shadow-sm">
-            {adminSections.map((section) => (
-              <button
-                key={`${section.label}-${section.value}`}
-                onClick={() => openAdminSection(section.value, section.label)}
-                className={`focus-ring min-h-11 rounded-md px-3 text-left text-sm font-black ${
-                  activeSection === section.value ? "bg-china-red text-white shadow-sm" : "text-stone-800 hover:bg-white"
-                }`}
-              >
-                {section.label}
+      {adminMenuOpen && (
+        <div className="fixed inset-0 z-50">
+          <button aria-label="Close admin menu" onClick={() => setAdminMenuOpen(false)} className="absolute inset-0 bg-black/40" />
+          <aside className="absolute left-0 top-0 flex h-full w-72 max-w-[85vw] flex-col gap-2 overflow-y-auto border-r border-china-gold/60 bg-[#fff7e8] p-3 shadow-warm">
+            <div className="flex items-center justify-between">
+              <p className="px-1 text-xs font-black uppercase tracking-[0.14em] text-china-red">Admin menu</p>
+              <button onClick={() => setAdminMenuOpen(false)} aria-label="Close admin menu" className="focus-ring inline-flex h-9 w-9 items-center justify-center rounded-md border border-china-gold/70 bg-white text-stone-800">
+                <X className="h-5 w-5" />
               </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-5 grid gap-5 sm:mt-6 lg:grid-cols-[13rem_1fr]">
-        <aside className="hidden lg:block">
-          <div className="sticky top-4 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-2 shadow-sm">
-            <p className="px-2 py-2 text-xs font-black uppercase tracking-[0.14em] text-china-red">Admin menu</p>
+            </div>
             <div className="grid gap-1">
               {adminSections.map((section) => (
                 <button
                   key={`${section.label}-${section.value}`}
-                  onClick={() => openAdminSection(section.value, section.label)}
-                  className={`focus-ring rounded-md px-3 py-2 text-left text-sm font-black ${
+                  onClick={() => openAdminSection(section.value)}
+                  className={`focus-ring min-h-11 rounded-md px-3 text-left text-sm font-black ${
                     activeSection === section.value ? "bg-china-red text-white shadow-sm" : "text-stone-800 hover:bg-white"
                   }`}
                 >
@@ -1224,269 +1248,81 @@ export function AdminDashboard() {
                 </button>
               ))}
             </div>
+          </aside>
+        </div>
+      )}
+
+      <div className="mt-6 min-w-0 space-y-6">
+      {activeSection === "ordering" && (
+        <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
+          <p className="font-black text-china-red">Online Ordering Status</p>
+          <p className="mt-1 text-sm font-bold text-stone-700">
+            {operations?.orderingAllowed ? "Taking online orders" : "Not taking online orders"}
+            {operations?.settings.orderingOverride.mode !== "normal" && operations?.nextBoundary ? ` until ${operations.nextBoundary.label}` : ""}
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <button
+              onClick={() => updateOperations({ orderingOverrideMode: "open" })}
+              className={`focus-ring min-h-11 rounded-md border px-3 text-sm font-black ${
+                operations?.settings.orderingOverride.mode === "open" ? "border-china-green bg-china-green text-white" : "border-china-green/60 bg-white text-china-green"
+              }`}
+            >
+              Taking orders
+            </button>
+            <button
+              onClick={() => updateOperations({ orderingOverrideMode: "paused" })}
+              className={`focus-ring min-h-11 rounded-md border px-3 text-sm font-black ${
+                operations?.settings.orderingOverride.mode === "paused" ? "border-china-red bg-china-red text-white" : "border-china-red/60 bg-white text-china-red"
+              }`}
+            >
+              Pause orders
+            </button>
+            <button
+              onClick={() => updateOperations({ orderingOverrideMode: "normal" })}
+              className={`focus-ring min-h-11 rounded-md border px-3 text-sm font-black ${
+                !operations || operations.settings.orderingOverride.mode === "normal" ? "border-china-gold bg-china-gold text-stone-950" : "border-china-gold/70 bg-white text-stone-800"
+              }`}
+            >
+              Follow hours
+            </button>
           </div>
-        </aside>
-
-        <div className="min-w-0">
-      <div id="admin-ordering-status" className="scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
-        <p className="font-black text-china-red">Online Ordering Status</p>
-        <p className="mt-1 text-sm font-bold text-stone-700">
-          {operations?.orderingAllowed ? "Taking online orders" : "Not taking online orders"}
-          {operations?.settings.orderingOverride.mode !== "normal" && operations?.nextBoundary ? ` until ${operations.nextBoundary.label}` : ""}
-        </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <button
-            onClick={() => updateOperations({ orderingOverrideMode: "open" })}
-            className={`focus-ring min-h-11 rounded-md border px-3 text-sm font-black ${
-              operations?.settings.orderingOverride.mode === "open" ? "border-china-green bg-china-green text-white" : "border-china-green/60 bg-white text-china-green"
-            }`}
-          >
-            Taking orders
-          </button>
-          <button
-            onClick={() => updateOperations({ orderingOverrideMode: "paused" })}
-            className={`focus-ring min-h-11 rounded-md border px-3 text-sm font-black ${
-              operations?.settings.orderingOverride.mode === "paused" ? "border-china-red bg-china-red text-white" : "border-china-red/60 bg-white text-china-red"
-            }`}
-          >
-            Pause orders
-          </button>
-          <button
-            onClick={() => updateOperations({ orderingOverrideMode: "normal" })}
-            className={`focus-ring min-h-11 rounded-md border px-3 text-sm font-black ${
-              !operations || operations.settings.orderingOverride.mode === "normal" ? "border-china-gold bg-china-gold text-stone-950" : "border-china-gold/70 bg-white text-stone-800"
-            }`}
-          >
-            Follow hours
-          </button>
         </div>
-      </div>
+      )}
 
-      <div id="admin-orders" className="mt-5 grid scroll-mt-24 gap-3 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:mt-6 sm:gap-4">
-        <p className="font-black text-china-red">Current Orders</p>
-        <label className="relative">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, order number, or item" className="focus-ring h-12 w-full rounded-md border border-china-gold/70 bg-white pl-12 pr-3 text-base sm:h-14 sm:pr-4 sm:text-lg" />
-        </label>
-        <p className="text-xs font-bold text-stone-600">Kitchen tickets print to the local Epson printer. New orders auto-print once while this page is open.</p>
-        <div className="grid gap-2 sm:flex sm:flex-wrap">
-          <button
-            onClick={createTestOrder}
-            disabled={creatingTestOrder}
-            className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {creatingTestOrder ? "Creating test order..." : "Create test order"}
-          </button>
-          <button
-            onClick={() => printDailyReport()}
-            disabled={dailyReportBusy}
-            className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {dailyReportBusy ? "Printing report..." : "Print daily report"}
-          </button>
-        </div>
-        <p className="text-xs font-bold text-stone-600">The daily report also prints automatically at 10:00 PM. Test orders are clearly marked TEST and excluded from report totals.</p>
-        {toolMessage && <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{toolMessage}</p>}
-      </div>
-      <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-        {filterTabs.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => setFilter(tab.value)}
-            className={`focus-ring min-h-11 shrink-0 rounded-md border px-3 py-2 text-sm font-black sm:px-4 sm:text-base ${
-              filter === tab.value ? "border-china-red bg-china-red text-white" : "border-china-gold/70 bg-white text-stone-800"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        {visible.map((order) => {
-          const expanded = expandedOrders.has(order.order_number);
-          const itemCount = order.order_items.reduce((sum, item) => sum + item.quantity, 0);
-          const printState = kitchenPrintStatus[order.order_number];
-          const isTestOrder = order.order_number.toUpperCase().startsWith("TEST");
-          return (
-          <article key={order.order_number} className={`rounded-lg border p-3 shadow-sm ${isTestOrder ? "border-2 border-dashed border-purple-400 bg-purple-50" : order.status === "new" ? "border-2 border-china-red bg-red-50 ring-2 ring-china-gold/50" : "border-china-gold/50 bg-white"}`}>
-            <div className="flex flex-col justify-between gap-2 lg:flex-row">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="break-all font-black text-china-red">{order.order_number}</p>
-                  {isTestOrder && <span className="rounded-md bg-purple-600 px-2 py-1 text-xs font-black uppercase text-white">TEST</span>}
-                  <span className={`rounded-md border px-2 py-1 text-xs font-black uppercase ${statusStyles[order.status]}`}>{statusLabel(order.status)}</span>
-                  {order.status === "new" && <span className="rounded-md bg-china-gold px-2 py-1 text-xs font-black uppercase text-china-ink">New Order</span>}
-                </div>
-                <h2 className="mt-1 truncate text-lg font-black">{order.customer_name}</h2>
-                <p className="grid gap-0.5 text-sm text-stone-600 sm:block">
-                  <a href={`tel:${order.customer_phone.replace(/\D/g, "")}`} className="font-bold text-stone-800 underline-offset-2 hover:underline">{order.customer_phone}</a>
-                  {order.customer_email ? <span className="break-all sm:before:content-['_|_']">{order.customer_email}</span> : null}
-                </p>
-                <p className="mt-1 text-sm font-bold text-stone-700">
-                  {order.created_at ? formatPickupDateTime(order.created_at) : "—"} · Total: {formatPrice(order.total)} · {itemCount} item{itemCount === 1 ? "" : "s"}
-                </p>
-                {Number(order.discount_amount ?? 0) > 0 && (
-                  <p className="mt-1 text-sm font-bold text-china-red">{order.promo_code ? `Promo ${order.promo_code}` : "Special offer discount"}: -{formatPrice(Number(order.discount_amount))}</p>
-                )}
-                {order.customer_notes && hasInstructionAlert(order.customer_notes) && (
-                  <p className="mt-1 rounded-md bg-yellow-100 px-2 py-1 text-sm font-bold text-yellow-950">Notes: {order.customer_notes}</p>
-                )}
+      {activeSection === "orders" && (
+        <div className="grid gap-4">
+          <label className="relative">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, order number, or item" className="focus-ring h-12 w-full rounded-md border border-china-gold/70 bg-white pl-12 pr-4 text-base" />
+          </label>
+          <p className="text-xs font-bold text-stone-600">Tap a card to open the full order. Kitchen tickets print to the local Epson printer; new orders auto-print once while this page is open.</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-lg border border-china-red/40 bg-red-50/40 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="font-black text-china-red">New orders</p>
+                <span className="rounded-md bg-china-red px-2 py-0.5 text-xs font-black text-white">{newColumn.length}</span>
               </div>
-              <div className="grid gap-2 sm:min-w-56">
-                <select
-                  value={order.status}
-                  onChange={(event) => {
-                    const nextStatus = event.target.value as OrderStatus;
-                    if (nextStatus === "accepted") {
-                      setAcceptingOrder(order.order_number);
-                      return;
-                    }
-                    updateStatus(order.order_number, nextStatus);
-                  }}
-                  disabled={updatingOrders.has(order.order_number)}
-                    className="focus-ring h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {statuses.map((value) => (
-                    <option key={value} value={value}>
-                      {statusLabel(value)}
-                    </option>
-                  ))}
-                </select>
-                {order.status === "new" && (
-                  <button
-                    onClick={() => setAcceptingOrder(order.order_number)}
-                    disabled={updatingOrders.has(order.order_number)}
-                    className="focus-ring min-h-11 rounded-md bg-china-red px-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:bg-stone-400"
-                  >
-                    Accept / Confirm order
-                  </button>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  {quickStatuses.map((nextStatus) => (
-                    <button
-                      key={nextStatus}
-                      onClick={() => updateStatus(order.order_number, nextStatus)}
-                      disabled={updatingOrders.has(order.order_number)}
-                      className={`focus-ring min-h-11 rounded-md border px-2 text-sm font-black disabled:cursor-not-allowed disabled:opacity-60 ${statusStyles[nextStatus]}`}
-                    >
-                      {statusLabel(nextStatus)}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={() => updateStatus(order.order_number, "ready")}
-                  disabled={updatingOrders.has(order.order_number)}
-                  className="focus-ring min-h-11 rounded-md border border-china-green bg-china-green px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Mark Ready & Email Customer
-                </button>
-                <button
-                  onClick={() => printKitchenTicket(order)}
-                  disabled={networkPrintingOrders.has(order.order_number)}
-                  className="focus-ring min-h-11 rounded-md border border-china-red bg-china-red px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400"
-                >
-                  {networkPrintingOrders.has(order.order_number)
-                    ? "Sending to printer..."
-                    : printState?.status === "failed"
-                      ? "Retry Kitchen Print"
-                      : printState?.status === "printed"
-                        ? "Reprint Kitchen Ticket"
-                        : "Kitchen Print"}
-                </button>
-                {printState?.status === "printed" && (
-                  <p className="rounded-md bg-green-100 px-2 py-1 text-xs font-black uppercase text-green-800">Printed</p>
-                )}
-                {printState?.status === "failed" && (
-                  <p className="whitespace-pre-wrap break-words rounded-md bg-amber-100 px-2 py-2 text-xs font-black uppercase text-amber-950">
-                    Failed: {printState.message ?? "Printer offline or unreachable."}
-                  </p>
-                )}
-                <div className="grid grid-cols-4 gap-2">
-                  {activeStatuses.includes(order.status) ? (
-                    <button onClick={() => openEditOrder(order)} className="focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-china-gold/70 bg-white text-stone-900" aria-label="Edit order">
-                      <Edit3 className="h-4 w-4" />
-                    </button>
-                  ) : (
-                    <span className="min-h-11" />
-                  )}
-                  <a href={`tel:${order.customer_phone.replace(/\D/g, "")}`} className="focus-ring inline-flex min-h-10 items-center justify-center rounded-md border border-china-gold/70 bg-white text-stone-900" aria-label="Call customer">
-                    <Phone className="h-4 w-4" />
-                  </a>
-                  <button onClick={() => copyPhone(order.customer_phone)} className="focus-ring inline-flex min-h-10 items-center justify-center rounded-md border border-china-gold/70 bg-white text-stone-900" aria-label="Copy phone">
-                    <Copy className="h-4 w-4" />
-                  </button>
-                  <Link href={`/admin/orders/${order.order_number}/print`} className="focus-ring inline-flex min-h-10 items-center justify-center rounded-md border border-china-gold/70 bg-white text-stone-900" aria-label="Print ticket">
-                    <Printer className="h-4 w-4" />
-                  </Link>
-                </div>
+              <div className="grid gap-3">
+                {newColumn.map((order) => renderOrderCard(order))}
+                {newColumn.length === 0 && <p className="rounded-md border border-dashed border-china-gold/60 bg-white/60 p-4 text-center text-sm font-bold text-stone-500">No new orders.</p>}
               </div>
             </div>
-            <div className="mt-3 border-t border-stone-200 pt-3">
-              <button
-                onClick={() => toggleExpanded(order.order_number)}
-                aria-expanded={expanded}
-                className="focus-ring min-h-10 w-full rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800"
-              >
-                {expanded ? "Hide order details" : "View order details"}
-              </button>
-              {expanded && (
-                <div className="mt-3 grid gap-2">
-                  <p className="text-sm text-stone-600">{paymentLabel(order.payment_method, order.payment_status)} | Pickup: {pickupLabel(order)}</p>
-                  <p className="text-sm font-bold text-stone-700">Ready: {readyLabel(order)}</p>
-                  {order.delivery_address && <p className="text-sm text-stone-600">{order.delivery_address}</p>}
-                  {order.customer_notes && (
-                    <p className={`rounded-md px-2 py-1 text-sm font-bold ${hasInstructionAlert(order.customer_notes) ? "bg-yellow-100 text-yellow-950" : "text-stone-600"}`}>
-                      Notes: {order.customer_notes}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-1 text-[11px] font-black">
-                    {order.confirmation_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Confirmation email sent</span>}
-                    {order.confirmation_email_error && (
-                      <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.confirmation_email_error}>
-                        {emailErrorLabel("Confirmation email", order.confirmation_email_error)}
-                      </span>
-                    )}
-                    {order.accepted_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Accepted email sent</span>}
-                    {order.accepted_email_error && (
-                      <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.accepted_email_error}>
-                        {emailErrorLabel("Accepted email", order.accepted_email_error)}
-                      </span>
-                    )}
-                    {order.ready_email_sent_at && <span className="rounded-md bg-green-100 px-2 py-1 text-green-800">Ready email sent</span>}
-                    {order.ready_email_error && (
-                      <span className="max-w-full rounded-md bg-amber-100 px-2 py-1 text-amber-900" title={order.ready_email_error}>
-                        {emailErrorLabel("Ready email", order.ready_email_error)}
-                      </span>
-                    )}
-                  </div>
-                  {order.order_items.map((item, index) => (
-                    <div
-                      key={`${order.order_number}-${item.item_number}-${index}`}
-                      className={`flex flex-col justify-between gap-1 rounded-md p-2 text-sm sm:flex-row ${
-                        hasInstructionAlert(`${customizationText(item.customization)} ${String(item.customization?.notes ?? "")}`) ? "bg-yellow-100 text-yellow-950" : "bg-china-paper"
-                      }`}
-                    >
-                      <span>
-                        <strong>
-                          {item.quantity} x #{item.item_number} {item.item_name}
-                        </strong>
-                        {customizationText(item.customization) && <span className="block text-sm text-stone-600">{customizationText(item.customization)}</span>}
-                        {item.customization?.notes ? <span className="block text-sm font-bold text-stone-700">Notes: {String(item.customization.notes)}</span> : null}
-                      </span>
-                      <span className="font-bold">{formatPrice(item.unit_price * item.quantity)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="rounded-lg border border-china-gold/50 bg-white/50 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="font-black text-amber-900">Preparing</p>
+                <span className="rounded-md bg-amber-500 px-2 py-0.5 text-xs font-black text-white">{prepColumn.length}</span>
+              </div>
+              <div className="grid gap-3">
+                {prepColumn.map((order) => renderOrderCard(order))}
+                {prepColumn.length === 0 && <p className="rounded-md border border-dashed border-china-gold/60 bg-white/60 p-4 text-center text-sm font-bold text-stone-500">No orders in progress.</p>}
+              </div>
             </div>
-          </article>
-          );
-        })}
-        {visible.length === 0 && <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-8 text-center font-bold">No orders found.</div>}
-      </div>
+          </div>
+        </div>
+      )}
 
-      <div className="mt-5 grid gap-4 sm:mt-6">
+      {activeSection === "sold-out" && (
+      <div className="grid gap-4">
         <div id="admin-sold-out" className="scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
           <p className="font-black text-china-red">Sold Out Today</p>
           <div className="mt-3 grid gap-2">
@@ -1518,40 +1354,49 @@ export function AdminDashboard() {
           </div>
         </div>
       </div>
+      )}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_1fr]">
-        <div id="admin-reports" className="scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="font-black text-china-red">Today Reports</p>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={exportTodayCsv} className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-black text-stone-800">
-                Export today CSV
-              </button>
-              <button
-                onClick={() => {
-                  setReportsPanelOpen((open) => !open);
-                  if (!reportsPanelOpen) void loadDailyReportHistory(reportDate || easternDateKey());
-                }}
-                className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-black text-stone-800"
-              >
-                {reportsPanelOpen ? "Hide history" : "View reports"}
-              </button>
+      {activeSection === "reports" && (
+        <div className="grid gap-4">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={createTestOrder} disabled={creatingTestOrder} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
+              {creatingTestOrder ? "Creating test order..." : "Create test order"}
+            </button>
+            <button onClick={() => printDailyReport()} disabled={dailyReportBusy} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
+              {dailyReportBusy ? "Printing report..." : "Print daily report"}
+            </button>
+            <button onClick={exportTodayCsv} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+              Export today CSV
+            </button>
+            <button
+              onClick={() => {
+                setReportsPanelOpen((open) => !open);
+                if (!reportsPanelOpen) void loadDailyReportHistory(reportDate || easternDateKey());
+              }}
+              className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800"
+            >
+              {reportsPanelOpen ? "Hide history" : "View reports history"}
+            </button>
+          </div>
+          <p className="text-xs font-bold text-stone-600">The daily report also prints automatically at 10:00 PM. Test orders are clearly marked TEST and excluded from report totals.</p>
+          {toolMessage && <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{toolMessage}</p>}
+          <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
+            <p className="font-black text-china-red">Today&apos;s top items</p>
+            <div className="mt-3 grid gap-2 text-sm">
+              {topItems.length ? (
+                topItems.map((item) => (
+                  <div key={item.name} className="flex justify-between gap-3 rounded-md border border-china-gold/40 bg-white px-3 py-2">
+                    <span className="min-w-0 break-words font-bold">{item.name}</span>
+                    <span className="shrink-0 font-black">{item.quantity} / {formatPrice(item.sales)}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="font-bold text-stone-600">No item sales yet today.</p>
+              )}
             </div>
           </div>
-          <div className="mt-3 grid gap-2 text-sm">
-            {topItems.length ? (
-              topItems.map((item) => (
-                <div key={item.name} className="flex justify-between gap-3 rounded-md border border-china-gold/40 bg-white px-3 py-2">
-                  <span className="min-w-0 break-words font-bold">{item.name}</span>
-                  <span className="shrink-0 font-black">{item.quantity} / {formatPrice(item.sales)}</span>
-                </div>
-              ))
-            ) : (
-              <p className="font-bold text-stone-600">No item sales yet today.</p>
-            )}
-          </div>
           {reportsPanelOpen && (
-            <div className="mt-4 grid gap-3 rounded-md border border-china-gold/50 bg-white p-3">
+            <div className="grid gap-3 rounded-md border border-china-gold/50 bg-white p-3">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <p className="font-black text-china-red">Daily Reports History</p>
@@ -1660,8 +1505,10 @@ export function AdminDashboard() {
             </div>
           )}
         </div>
+      )}
 
-        <div id="admin-settings" className="scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4 lg:col-span-2">
+      {activeSection === "settings" && (
+        <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
           <p className="font-black text-china-red">Admin Settings Helper</p>
           <div className="mt-3 grid gap-2 text-sm font-bold text-stone-700 sm:grid-cols-2">
             <p>Hours: Mon-Thu 11:00 AM-10:00 PM; Fri-Sat 11:00 AM-10:30 PM; Sun 12:00 PM-10:00 PM</p>
@@ -1674,33 +1521,174 @@ export function AdminDashboard() {
             </p>
           </div>
         </div>
-      </div>
+      )}
 
-      <PromoManager />
+      {activeSection === "promo" && <PromoManager />}
 
-      <SpecialOffersManager />
+      {activeSection === "special-offers" && <SpecialOffersManager />}
 
-      <div id="admin-summary" className="mt-5 grid scroll-mt-24 gap-3 sm:mt-6 sm:grid-cols-2 lg:grid-cols-5">
-        {[
-          ["Orders today", dailySummary.totalOrders],
-          ["New", dailySummary.newOrders],
-          ["Active", dailySummary.activeOrders],
-          ["Picked up / completed", dailySummary.pickedUpCompleted],
-          ["Cancelled", dailySummary.cancelled],
-          ["Sales", formatPrice(dailySummary.totalSales)],
-          ["Cash", formatPrice(dailySummary.cashSales)],
-          ["Stripe paid", formatPrice(dailySummary.stripeSales)],
-          ["Tips", formatPrice(dailySummary.tips)],
-          ["Avg order", formatPrice(dailySummary.averageOrder)]
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-[0.12em] text-china-red">{label}</p>
-            <p className="mt-1 text-xl font-black text-stone-900">{value}</p>
-          </div>
-        ))}
-      </div>
+      {activeSection === "summary" && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            ["Orders today", dailySummary.totalOrders],
+            ["New", dailySummary.newOrders],
+            ["Active", dailySummary.activeOrders],
+            ["Picked up / completed", dailySummary.pickedUpCompleted],
+            ["Cancelled", dailySummary.cancelled],
+            ["Sales", formatPrice(dailySummary.totalSales)],
+            ["Cash", formatPrice(dailySummary.cashSales)],
+            ["Stripe paid", formatPrice(dailySummary.stripeSales)],
+            ["Tips", formatPrice(dailySummary.tips)],
+            ["Avg order", formatPrice(dailySummary.averageOrder)]
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-[0.12em] text-china-red">{label}</p>
+              <p className="mt-1 text-xl font-black text-stone-900">{value}</p>
+            </div>
+          ))}
         </div>
+      )}
+
+      {activeSection === "past-orders" && (
+        <div className="grid gap-4">
+          <label className="relative">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search past orders by name, phone, number, or item" className="focus-ring h-12 w-full rounded-md border border-china-gold/70 bg-white pl-12 pr-4 text-base" />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {([
+              { value: "past", label: "All past" },
+              { value: "picked_up", label: "Picked Up" },
+              { value: "completed", label: "Completed" },
+              { value: "cancelled", label: "Cancelled" }
+            ] as Array<{ value: AdminFilter; label: string }>).map((tab) => (
+              <button key={tab.value} onClick={() => setFilter(tab.value)} className={`focus-ring min-h-10 rounded-md border px-3 text-sm font-black ${filter === tab.value ? "border-china-red bg-china-red text-white" : "border-china-gold/70 bg-white text-stone-800"}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {pastBoard.map((order) => renderOrderCard(order))}
+            {pastBoard.length === 0 && <p className="rounded-md border border-china-gold/60 bg-[#fff7e8] p-8 text-center font-bold sm:col-span-2 lg:col-span-3">No past orders found.</p>}
+          </div>
+        </div>
+      )}
       </div>
+
+      {selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50" role="dialog" aria-modal="true">
+          <button aria-label="Close order details" onClick={() => setSelectedOrderNumber(null)} className="absolute inset-0" />
+          <div className="relative z-10 flex h-full w-full max-w-lg flex-col overflow-y-auto bg-white shadow-warm">
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-china-red">Order</p>
+                <h2 className="truncate text-xl font-black">{selectedOrder.order_number}</h2>
+              </div>
+              <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-black uppercase ${statusStyles[selectedOrder.status]}`}>{statusLabel(selectedOrder.status)}</span>
+              <button onClick={() => setSelectedOrderNumber(null)} aria-label="Close order details" className="focus-ring inline-flex h-10 w-10 items-center justify-center rounded-md border border-stone-300 text-stone-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid gap-4 p-4">
+              <div className="grid gap-2">
+                <h3 className="text-lg font-black">{selectedOrder.customer_name}</h3>
+                <p className="break-all text-sm font-bold text-stone-700">
+                  <a href={`tel:${selectedOrder.customer_phone.replace(/\D/g, "")}`} className="underline-offset-2 hover:underline">{selectedOrder.customer_phone}</a>
+                  {selectedOrder.customer_email ? ` · ${selectedOrder.customer_email}` : ""}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <a href={`tel:${selectedOrder.customer_phone.replace(/\D/g, "")}`} className="focus-ring inline-flex items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-black text-stone-800"><Phone className="h-4 w-4" /> Call</a>
+                  <button onClick={() => copyPhone(selectedOrder.customer_phone)} className="focus-ring inline-flex items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 py-2 text-sm font-black text-stone-800"><Copy className="h-4 w-4" /> Copy phone</button>
+                </div>
+              </div>
+
+              {selectedOrder.pickup_time_type === "scheduled" && selectedOrder.scheduled_pickup_time ? (
+                <p className="rounded-md bg-china-gold px-3 py-2 text-sm font-black uppercase text-china-ink">Scheduled pickup · {formatPickupDateTime(selectedOrder.scheduled_pickup_time)}</p>
+              ) : (
+                <p className="rounded-md border border-china-gold/60 bg-[#fff7e8] px-3 py-2 text-sm font-black text-stone-800">Pickup: ASAP</p>
+              )}
+              <p className="text-sm font-bold text-stone-700">Ready: {readyLabel(selectedOrder)}</p>
+              <p className="text-sm text-stone-600">{paymentLabel(selectedOrder.payment_method, selectedOrder.payment_status)}</p>
+              {selectedOrder.customer_notes && (
+                <p className={`rounded-md px-3 py-2 text-sm font-bold ${hasInstructionAlert(selectedOrder.customer_notes) ? "bg-yellow-100 text-yellow-950" : "bg-china-paper text-stone-700"}`}>Notes: {selectedOrder.customer_notes}</p>
+              )}
+
+              <div className="grid gap-2">
+                <p className="font-black text-china-red">Items</p>
+                {selectedOrder.order_items.map((item, index) => (
+                  <div key={`${selectedOrder.order_number}-${item.item_number}-${index}`} className={`flex justify-between gap-2 rounded-md p-2 text-sm ${hasInstructionAlert(`${customizationText(item.customization)} ${String(item.customization?.notes ?? "")}`) ? "bg-yellow-100 text-yellow-950" : "bg-china-paper"}`}>
+                    <span className="min-w-0">
+                      <strong>{item.quantity} x #{item.item_number} {item.item_name}</strong>
+                      {customizationText(item.customization) && <span className="block text-stone-600">{customizationText(item.customization)}</span>}
+                      {item.customization?.notes ? <span className="block font-bold text-stone-700">Notes: {String(item.customization.notes)}</span> : null}
+                    </span>
+                    <span className="shrink-0 font-bold">{formatPrice(item.unit_price * item.quantity)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-1 rounded-md border border-stone-200 p-3 text-sm font-bold">
+                <p className="flex justify-between"><span>Subtotal</span><span>{formatPrice(selectedOrder.subtotal)}</span></p>
+                {Number(selectedOrder.discount_amount ?? 0) > 0 && (
+                  <p className="flex justify-between text-china-red"><span>{selectedOrder.promo_code ? `Promo ${selectedOrder.promo_code}` : "Special offer"}</span><span>-{formatPrice(Number(selectedOrder.discount_amount))}</span></p>
+                )}
+                <p className="flex justify-between"><span>Tax</span><span>{formatPrice(selectedOrder.tax)}</span></p>
+                <p className="flex justify-between"><span>Processing fee</span><span>{formatPrice(Number(selectedOrder.processing_fee ?? 0))}</span></p>
+                <p className="flex justify-between"><span>Tip</span><span>{formatPrice(Number(selectedOrder.tip_amount ?? 0))}</span></p>
+                <p className="mt-1 flex justify-between border-t border-stone-200 pt-1 text-base font-black"><span>Total</span><span>{formatPrice(selectedOrder.total)}</span></p>
+              </div>
+
+              <div className="grid gap-1 text-[11px] font-black">
+                {selectedOrder.confirmation_email_sent_at && <span className="w-fit rounded-md bg-green-100 px-2 py-1 text-green-800">Confirmation email sent</span>}
+                {selectedOrder.accepted_email_sent_at && <span className="w-fit rounded-md bg-green-100 px-2 py-1 text-green-800">Accepted email sent</span>}
+                {selectedOrder.ready_email_sent_at && <span className="w-fit rounded-md bg-green-100 px-2 py-1 text-green-800">Ready email sent</span>}
+              </div>
+
+              <div className="grid gap-2">
+                {primaryActionFor(selectedOrder) && (
+                  <button onClick={() => primaryActionFor(selectedOrder)?.run()} disabled={updatingOrders.has(selectedOrder.order_number)} className={`focus-ring min-h-12 rounded-md px-4 font-black shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${primaryActionFor(selectedOrder)?.className}`}>
+                    {updatingOrders.has(selectedOrder.order_number) ? "Saving..." : primaryActionFor(selectedOrder)?.label}
+                  </button>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => printKitchenTicket(selectedOrder)} disabled={networkPrintingOrders.has(selectedOrder.order_number)} className="focus-ring min-h-11 rounded-md border border-china-red bg-china-red px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
+                    {networkPrintingOrders.has(selectedOrder.order_number) ? "Printing..." : kitchenPrintStatus[selectedOrder.order_number]?.status === "printed" ? "Reprint kitchen ticket" : "Kitchen print"}
+                  </button>
+                  <Link href={`/admin/orders/${selectedOrder.order_number}/print`} className="focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+                    <Printer className="mr-2 h-4 w-4" /> AirPrint / browser
+                  </Link>
+                </div>
+                {kitchenPrintStatus[selectedOrder.order_number]?.status === "failed" && (
+                  <p className="whitespace-pre-wrap break-words rounded-md bg-amber-100 px-3 py-2 text-xs font-black uppercase text-amber-950">Print failed: {kitchenPrintStatus[selectedOrder.order_number]?.message ?? "Printer offline."}</p>
+                )}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {activeStatuses.includes(selectedOrder.status) && (
+                    <button onClick={() => { const order = selectedOrder; setSelectedOrderNumber(null); openEditOrder(order); }} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+                      <Edit3 className="h-4 w-4" /> Edit order
+                    </button>
+                  )}
+                  <label className="grid gap-1 text-xs font-black text-stone-700">
+                    Change status
+                    <select
+                      value={selectedOrder.status}
+                      onChange={(event) => {
+                        const nextStatus = event.target.value as OrderStatus;
+                        if (nextStatus === "accepted") { setAcceptingOrder(selectedOrder.order_number); return; }
+                        updateStatus(selectedOrder.order_number, nextStatus);
+                        if (nextStatus === "picked_up" || nextStatus === "completed" || nextStatus === "cancelled") setSelectedOrderNumber(null);
+                      }}
+                      disabled={updatingOrders.has(selectedOrder.order_number)}
+                      className="focus-ring h-11 rounded-md border border-china-gold/70 bg-white px-2 text-sm font-bold disabled:opacity-60"
+                    >
+                      {statuses.map((value) => (<option key={value} value={value}>{statusLabel(value)}</option>))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editingOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" role="dialog" aria-modal="true">

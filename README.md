@@ -20,9 +20,6 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-STRIPE_SECRET_KEY=
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
-STRIPE_WEBHOOK_SECRET=
 ADMIN_PASSWORD=
 RESEND_API_KEY=
 ORDER_FROM_EMAIL=
@@ -35,12 +32,11 @@ GOOGLE_SERVICE_ACCOUNT_EMAIL=
 GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=
 NEXT_PUBLIC_TAX_RATE=0.0735
 NEXT_PUBLIC_PROCESSING_FEE_RATE=0.06
-TWILIO_ACCOUNT_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_PHONE_NUMBER=
 ```
 
-Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Stripe keys, `STRIPE_WEBHOOK_SECRET`, Resend email variables, Telegram variables if you want phone notifications, Google Sheets variables if you want live sales sync, tax/fee rates, and Twilio variables when real SMS is desired.
+Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Resend email variables, Telegram variables for new-order notifications, Google Sheets variables if you want live sales sync, and tax/fee rates.
+
+> Online ordering is **pay-at-pickup only** - there is no online card payment. Stripe and Twilio/SMS phone verification were removed; the related env vars are no longer read.
 
 ## Pricing (tax + processing fee)
 
@@ -52,7 +48,7 @@ Checkout totals are computed in `lib/pricing.ts` (`calculateCart`) from `lib/res
 - **Tip** = optional customer-selected amount at checkout (none selected by default).
 - **Total** = discounted subtotal + tax + processing fee + tip.
 
-These rates are read from env vars (never hardcoded). Both cash and Stripe orders save subtotal, promo code, discount, tax, processing fee, tip, and total to Supabase. The breakdown is shown on checkout, confirmation page, admin dashboard, print ticket, order emails, and order status.
+These rates are read from env vars (never hardcoded). Pay-at-pickup orders save subtotal, promo code, discount, tax, processing fee, tip, and total to Supabase. The breakdown is shown on checkout, confirmation page, admin dashboard, print ticket, order emails, and order status.
 
 ## Promo Codes / Discounts / Store Credit
 
@@ -75,7 +71,9 @@ Admin promo routes (`GET/POST/PATCH/DELETE /api/admin/promo-codes`) are protecte
 
 Run `sql/schema.sql` in the Supabase SQL editor. The file is idempotent and safe to rerun. The server API uses `SUPABASE_SERVICE_ROLE_KEY` to create orders and read/update the admin dashboard.
 
-It adds (among the base tables) the `orders.processing_fee`, `orders.tip_amount`, estimated-ready-time columns, accepted/ready timestamps, email sent/error tracking columns, and a `phone_verifications` table used for SMS phone verification. After pulling these changes, **rerun `sql/schema.sql`** (or at minimum the new statements) so the live database has them.
+It adds (among the base tables) the `orders.processing_fee`, `orders.tip_amount`, estimated-ready-time columns, accepted/ready timestamps, and email sent/error tracking columns. After pulling these changes, **rerun `sql/schema.sql`** (or at minimum the new statements) so the live database has them.
+
+> The schema still defines the `orders.stripe_session_id` column, the `'stripe'` value of the `payment_method` enum, and the `phone_verifications` table. These are **retained for backward compatibility with historical orders** even though Stripe and SMS verification have been removed from the app. Do not drop them without a separate, deliberate migration.
 
 ## Email Confirmations
 
@@ -124,8 +122,7 @@ If email is not received:
 - If `ORDER_FROM_EMAIL` uses `onboarding@resend.dev`, Resend may only send to verified/account emails depending on your account limits.
 - Use a verified sending domain for production, then set `ORDER_FROM_EMAIL` to something like `China Delight <orders@yourdomain.com>`.
 
-- Cash/pay-at-pickup orders send a confirmation email immediately after the order and items are saved to Supabase.
-- Stripe orders send the confirmation email from the Stripe webhook after `checkout.session.completed` marks payment as paid.
+- Pay-at-pickup orders send a confirmation email immediately after the order and items are saved to Supabase.
 - When admin marks an order ready, the app sends a ready-for-pickup email once and saves `ready_email_sent_at` so repeated clicks do not send duplicates.
 - Admin shows badges for confirmation/ready email sent or failed.
 
@@ -144,7 +141,7 @@ Create the bot with BotFather, send the bot a message from the Telegram account/
 
 ## Google Sheets Live Sales Sync
 
-New cash/pay-at-pickup orders can be appended to a Google Sheet for live sales tracking. The sync is optional and server-side only. Checkout saves the order and order items to Supabase first, then starts a best-effort Google Sheets append. If the Google Sheets variables are missing, sync is disabled. If the Google Sheets API fails, checkout still succeeds.
+New pay-at-pickup orders can be appended to a Google Sheet for live sales tracking. The sync is optional and server-side only. Checkout saves the order and order items to Supabase first, then attempts the Google Sheets append with a short timeout. If the Google Sheets variables are missing, sync is disabled. If the Google Sheets API fails or times out, checkout still succeeds.
 
 Set:
 
@@ -175,17 +172,9 @@ The app auto-creates the header row when the target tab is empty. Columns are:
 
 `4% Website Fee` is calculated from the final customer total after discounts, tax, processing fee, and tip. Test orders are marked when the order number starts with `TEST`; cancelled orders and test orders are marked as not counting toward sales. Because rows are appended after checkout succeeds, a retry after a transient server/runtime interruption could append a duplicate row; use `Order Number` as the unique reference when reviewing the Sheet.
 
-## Phone Verification
+## Phone Number At Checkout
 
-Phone number is required at checkout. SMS verification is optional for now and remains provider-ready for future use. The optional flow:
-
-1. Customer enters phone and clicks **Send verification code**.
-2. `POST /api/phone-verification` (`action: "send"`) generates a 6-digit code, stores it (Supabase `phone_verifications` table, or an in-memory fallback when Supabase is not configured), and sends it.
-3. Customer enters the code and clicks **Verify** (`action: "verify"`). Codes expire after 10 minutes.
-
-Messages shown: code sent, invalid code, code expired, phone verified. Customers can place cash or Stripe orders without completing SMS verification as long as they enter a phone number.
-
-**SMS provider:** set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER` to send real texts via Twilio (`lib/sms.ts`). If they are not set, the app runs in **development mode**: the code is logged and returned to the local browser so you can test, and is **never exposed in production** (`NODE_ENV === "production"`). Admin pages do not require verification.
+A phone number is required at checkout so the kitchen can reach the customer. There is **no SMS verification** — Twilio/SMS phone verification has been removed. The phone number is saved with the order and printed on the kitchen ticket.
 
 ## Store Hours And Lunch Specials
 
@@ -195,7 +184,7 @@ Online ordering is blocked outside China Delight's printed hours:
 - Friday-Saturday: 11:00 AM-10:30 PM
 - Sunday: 12:00 PM-10:00 PM
 
-The menu stays visible while closed, but the cart, checkout, and checkout API will not place cash or Stripe orders. Checkout shows the next opening time.
+The menu stays visible while closed, but the cart, checkout, and checkout API will not place orders. Checkout shows the next opening time.
 
 Lunch specials are available Monday-Saturday, 11:00 AM-3:00 PM only. Lunch special Add to Cart buttons are disabled outside that window. Every lunch item saves:
 
@@ -220,26 +209,13 @@ deliveryPlatforms: [
 
 When `url` is blank, the site shows that platform as "Coming soon." When `url` is filled in, the button opens that platform in a new tab.
 
-## Stripe Setup
+## Payment (Pay At Pickup)
 
-Add `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `NEXT_PUBLIC_SITE_URL`. When a customer selects "Pay online with Stripe" at checkout, the app creates a Stripe Checkout session and redirects them to Stripe. Without Stripe keys, the app still creates a local confirmation number for development.
+Online ordering is **pay-at-pickup only**. The checkout API always saves orders with `payment_method = pay_at_pickup` and `payment_status = unpaid`; the customer pays in store when they collect the order. There is no online card payment and no Stripe integration.
 
-`NEXT_PUBLIC_SITE_URL` must point at the running site (e.g. `http://localhost:3000` locally, your real domain in production) because it builds the Stripe success/cancel redirect URLs (`/confirmation?order=...` and `/checkout`).
+`NEXT_PUBLIC_SITE_URL` must still point at the running site (e.g. `http://localhost:3000` locally, your real domain in production) because it builds the `/admin` link included in Telegram new-order notifications.
 
-## Stripe Webhook
-
-Payment is confirmed server-side via the webhook at `app/api/stripe/webhook/route.ts` (`POST /api/stripe/webhook`). On `checkout.session.completed` it sets the order's `payment_status` to `paid` in Supabase; expired/failed sessions are marked `failed`. This requires `STRIPE_WEBHOOK_SECRET`.
-
-Local development with the Stripe CLI:
-
-```bash
-stripe login
-stripe listen --forward-to localhost:3000/api/stripe/webhook
-```
-
-`stripe listen` prints a signing secret (`whsec_...`). Put it in `.env.local` as `STRIPE_WEBHOOK_SECRET`, then restart `npm run dev` (environment variables are only read at startup).
-
-Production: create a webhook endpoint in the Stripe Dashboard pointing at `https://YOUR_DOMAIN/api/stripe/webhook`, subscribe to `checkout.session.completed` (and optionally `checkout.session.expired` / `checkout.session.async_payment_failed`), and copy its signing secret into `STRIPE_WEBHOOK_SECRET`.
+> **Historical orders:** older orders may have `payment_method = stripe` from when online payment was offered. The admin dashboard, order emails, daily report, and status pages still render those labels so historical data displays correctly. The `orders.stripe_session_id` column and the `'stripe'` enum value remain in the schema for that reason.
 
 ## Customer Order Status
 
@@ -278,11 +254,10 @@ npm run dev
 
 Open `http://localhost:3000`, search for a dish on the order page, add it to cart, checkout, then check `/admin`.
 
-### Test a Stripe payment
+### Test an order
 
-1. Make sure `stripe listen` is running (see Stripe Webhook above) and `STRIPE_WEBHOOK_SECRET` is set.
-2. Place an order and choose "Pay online with Stripe".
-3. On Stripe Checkout use test card `4242 4242 4242 4242`, any future expiry, any CVC and ZIP.
-4. You are redirected back to `/confirmation?order=...`; the `stripe listen` terminal shows `checkout.session.completed`, and the order's `payment_status` becomes `paid` in Supabase and on `/admin`.
+1. Place an order at checkout (pay-at-pickup only).
+2. You are sent to `/confirmation?order=...`; the order appears in Supabase and on `/admin` with `payment_method = pay_at_pickup` and `payment_status = unpaid`.
+3. If Telegram is configured, the new-order alert is delivered to the configured chat.
 
-Cash / pay-at-pickup orders skip Stripe entirely and go straight to the confirmation page. Website orders are pickup only; delivery links go to DoorDash, Uber Eats, or Grubhub.
+Website orders are pickup only; delivery links go to DoorDash, Uber Eats, or Grubhub.
