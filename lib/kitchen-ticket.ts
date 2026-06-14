@@ -3,6 +3,10 @@ import { customizationParts } from "@/lib/order-display";
 import { formatPickupDateTime } from "@/lib/order-rules";
 import { restaurant } from "@/lib/restaurant";
 
+// Tax/processing-fee percentages shown on the ticket, e.g. "7.35" and "6" (matches AirPrint).
+const taxPercent = Number((restaurant.taxRate * 100).toFixed(2));
+const processingFeePercent = Number((restaurant.processingFeeRate * 100).toFixed(2));
+
 export type PrintOrder = {
   order_number: string;
   customer_name: string;
@@ -48,9 +52,11 @@ function ticketModifiers(customization?: Record<string, unknown> | null) {
   return customizationParts(customization ?? {}).filter((part) => part.trim().toLowerCase() !== "size: order");
 }
 
-// Kitchen / pickup ticket for 80mm thermal paper. Mirrors the updated AirPrint layout:
-// restaurant name + phone header, a modest (not huge) order number, name/phone/pickup,
-// the order placed time, order notes, then each item with its modifiers and special notes.
+// Kitchen / pickup ticket for 80mm thermal paper. Mirrors the AirPrint ticket
+// (components/orders/print-ticket.tsx) as closely as ESC/POS allows: name+phone+address header,
+// centered order number, a prominent pickup block right after it (BIG scheduled-pickup warning when
+// scheduled, otherwise a clear ASAP block — never both), customer name/phone, ordered/ready time,
+// order notes, items with modifiers/special instructions + line price, then totals with tax/fee %.
 export function escposTicket(order: PrintOrder) {
   const divider = "-".repeat(lineWidth);
   const doubleDivider = "=".repeat(lineWidth);
@@ -61,11 +67,12 @@ export function escposTicket(order: PrintOrder) {
     for (const part of wrapLine(value, lineWidth - indent)) line(`${pad}${part}`);
   };
 
-  // Header: hardware-centered so the title stays centered at any font size.
+  // Header: restaurant name + phone + address, centered.
   chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeLarge);
   line("CHINA DELIGHT");
   chunks.push(cmd.sizeNormal);
   line(text(restaurant.phone));
+  line(text(restaurant.address));
   line("Kitchen / Pickup Ticket");
   if (isTestOrder(order)) {
     chunks.push(cmd.sizeTall);
@@ -75,18 +82,13 @@ export function escposTicket(order: PrintOrder) {
   chunks.push(cmd.boldOff);
   line(divider);
 
-  // Order number: modest size (double height only), not the full double-width banner.
+  // Order number: centered, double height (matches the AirPrint "#order" line).
   chunks.push(cmd.boldOn, cmd.sizeTall);
-  line(`Order #${text(order.order_number)}`);
+  line(`#${text(order.order_number)}`);
   chunks.push(cmd.sizeNormal, cmd.boldOff);
-  line(doubleDivider);
 
-  // Customer info, left aligned. Name/phone are enlarged for quick reads.
-  chunks.push(cmd.alignLeft, cmd.boldOn, cmd.sizeTall);
-  line(`NAME: ${text(order.customer_name)}`);
-  line(`PHONE: ${text(order.customer_phone)}`);
-  chunks.push(cmd.sizeNormal);
-  chunks.push(cmd.boldOff);
+  // Pickup block right after the order number (like AirPrint). Scheduled = BIG warning; otherwise a
+  // clear ASAP block. Never show both, and no conflicting ready/ASAP line when scheduled.
   if (isScheduled(order)) {
     line(doubleDivider);
     chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeTall);
@@ -95,10 +97,19 @@ export function escposTicket(order: PrintOrder) {
     chunks.push(cmd.sizeNormal, cmd.boldOff, cmd.alignLeft);
     line(doubleDivider);
   } else {
-    chunks.push(cmd.boldOn);
-    line(`PICKUP: ${text(pickupText(order))}`);
-    chunks.push(cmd.boldOff);
+    line(doubleDivider);
+    chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeTall);
+    line("PICKUP: ASAP");
+    chunks.push(cmd.sizeNormal, cmd.boldOff, cmd.alignLeft);
+    line(doubleDivider);
   }
+
+  // Customer info, left aligned. Phone enlarged for quick pickup calls (matches AirPrint).
+  chunks.push(cmd.boldOn);
+  line(`NAME: ${text(order.customer_name)}`);
+  chunks.push(cmd.sizeTall);
+  line(`PHONE: ${text(order.customer_phone)}`);
+  chunks.push(cmd.sizeNormal, cmd.boldOff);
   if (order.created_at) line(`ORDERED: ${text(formatPickupDateTime(order.created_at))}`);
   if (!isScheduled(order) && order.estimated_ready_at) line(`READY: ${text(formatPickupDateTime(order.estimated_ready_at))}`);
 
@@ -111,31 +122,32 @@ export function escposTicket(order: PrintOrder) {
   }
   line(doubleDivider);
 
-  // Items: each name printed large and bold; modifiers/notes only when present.
+  // Items: each name printed large and bold, line price right-aligned, modifiers/notes when present.
   for (const item of order.order_items ?? []) {
     const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${item.item_name}`;
     chunks.push(cmd.boldOn, cmd.sizeTall);
     wrapped(itemTitle.toUpperCase());
     chunks.push(cmd.sizeNormal, cmd.boldOff);
+    line(moneyLine("", Number(item.unit_price || 0) * Number(item.quantity || 0)));
     for (const part of ticketModifiers(item.customization)) {
       wrapped(`- ${part.toUpperCase()}`, 3);
     }
     const notes = item.customization?.notes;
     if (notes) {
       chunks.push(cmd.boldOn);
-      wrapped(`* SPECIAL: ${String(notes).toUpperCase()}`, 3);
+      wrapped(`* SPECIAL INSTRUCTIONS: ${String(notes).toUpperCase()}`, 3);
       chunks.push(cmd.boldOff);
     }
     line(divider);
   }
 
-  // Totals: full-width money lines; grand total enlarged.
+  // Totals: full-width money lines with tax/fee percentages; grand total enlarged (matches AirPrint).
   line(moneyLine("Subtotal", Number(order.subtotal || 0)));
   if (Number(order.discount_amount ?? 0) > 0) {
     line(moneyLine(`Promo${order.promo_code ? ` ${order.promo_code}` : ""}`, -Number(order.discount_amount ?? 0)));
   }
-  line(moneyLine("Tax", Number(order.tax || 0)));
-  line(moneyLine("Processing fee", Number(order.processing_fee ?? 0)));
+  line(moneyLine(`Tax (${taxPercent}%)`, Number(order.tax || 0)));
+  line(moneyLine(`Processing fee (${processingFeePercent}%)`, Number(order.processing_fee ?? 0)));
   line(moneyLine("Tip", Number(order.tip_amount ?? 0)));
   line(doubleDivider);
   chunks.push(cmd.boldOn, cmd.sizeTall);

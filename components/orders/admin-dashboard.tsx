@@ -1123,22 +1123,23 @@ export function AdminDashboard() {
 
   // The single primary action for a card/detail view, chosen by status: New -> Accept,
   // accepted/preparing -> Mark Ready, ready -> Mark Picked Up (which clears it off the board).
-  function primaryActionFor(order: AdminOrder): { label: string; className: string; run: () => void } | null {
-    if (order.status === "new") return { label: "Accept Order", className: "bg-china-red text-white", run: () => setAcceptingOrder(order.order_number) };
-    if (order.status === "accepted" || order.status === "preparing") return { label: "Mark Ready", className: "bg-china-green text-white", run: () => updateStatus(order.order_number, "ready") };
-    if (order.status === "ready") return { label: "Mark Picked Up", className: "bg-emerald-600 text-white", run: () => { updateStatus(order.order_number, "picked_up"); setSelectedOrderNumber(null); } };
+  function primaryActionFor(order: AdminOrder): { label: string; short: string; className: string; run: () => void } | null {
+    if (order.status === "new") return { label: "Accept Order", short: "Accept", className: "bg-china-red text-white", run: () => setAcceptingOrder(order.order_number) };
+    if (order.status === "accepted" || order.status === "preparing") return { label: "Mark Ready", short: "Ready", className: "bg-china-green text-white", run: () => updateStatus(order.order_number, "ready") };
+    if (order.status === "ready") return { label: "Mark Picked Up", short: "Picked Up", className: "bg-emerald-600 text-white", run: () => { updateStatus(order.order_number, "picked_up"); setSelectedOrderNumber(null); } };
     return null;
   }
 
+  // Compact order card: customer name + tiny meta on the left, action buttons on the right.
+  // Tapping the card opens the full detail drawer; the action buttons stop propagation so they
+  // never open the drawer. Phone, items, payment, notes, totals live in the drawer (not the card).
   function renderOrderCard(order: AdminOrder) {
     const isTestOrder = order.order_number.toUpperCase().startsWith("TEST");
-    const itemCount = order.order_items.reduce((sum, item) => sum + item.quantity, 0);
     const printState = kitchenPrintStatus[order.order_number];
     const scheduled = order.pickup_time_type === "scheduled" && Boolean(order.scheduled_pickup_time);
     const busy = updatingOrders.has(order.order_number);
+    const printing = networkPrintingOrders.has(order.order_number);
     const primary = primaryActionFor(order);
-    const firstItems = order.order_items.slice(0, 2).map((item) => `${item.quantity}x ${item.item_name}`).join(", ");
-    const extraItems = order.order_items.length - 2;
     const cardTone = isTestOrder
       ? "border-2 border-dashed border-purple-400 bg-purple-50"
       : order.status === "new"
@@ -1148,37 +1149,46 @@ export function AdminDashboard() {
       <article
         key={order.order_number}
         onClick={() => setSelectedOrderNumber(order.order_number)}
-        className={`focus-ring cursor-pointer rounded-lg border p-3 shadow-sm transition hover:shadow-md ${cardTone}`}
+        className={`focus-ring cursor-pointer rounded-lg border px-3 py-2 shadow-sm transition hover:shadow-md ${cardTone}`}
       >
-        <div className="flex items-center justify-between gap-2">
-          <span className="break-all font-black text-china-red">{order.order_number}</span>
-          <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-black uppercase ${statusStyles[order.status]}`}>{statusLabel(order.status)}</span>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-base font-black text-stone-900">{order.customer_name}</h3>
+            <p className="truncate text-[11px] font-bold text-stone-500">
+              <span className="text-china-red">#{order.order_number}</span>
+              {" · "}
+              {scheduled
+                ? <span className="font-black text-china-ink">Scheduled {formatPickupDateTime(order.scheduled_pickup_time as string)}</span>
+                : <span>ASAP</span>}
+              {" · "}{statusLabel(order.status)}{isTestOrder ? " · TEST" : ""}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+            {primary && (
+              <button
+                onClick={(event) => { event.stopPropagation(); primary.run(); }}
+                disabled={busy}
+                className={`focus-ring min-h-9 rounded-md px-2.5 text-xs font-black shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${primary.className}`}
+              >
+                {busy ? "..." : primary.short}
+              </button>
+            )}
+            <button
+              onClick={(event) => { event.stopPropagation(); printKitchenTicket(order); }}
+              disabled={printing}
+              title="Print kitchen ticket to the Epson printer"
+              className="focus-ring inline-flex min-h-9 items-center gap-1 rounded-md border border-china-red bg-white px-2.5 text-xs font-black text-china-red disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              {printing ? "..." : "Kitchen"}
+            </button>
+          </div>
         </div>
-        <div className="mt-1 flex items-center justify-between gap-2">
-          <h3 className="truncate text-base font-black text-stone-900">{order.customer_name}</h3>
-          <span className="shrink-0 text-base font-black">{formatPrice(order.total)}</span>
-        </div>
-        {scheduled ? (
-          <p className="mt-1 inline-flex rounded-md bg-china-gold px-2 py-1 text-xs font-black uppercase text-china-ink">Scheduled · {formatPickupDateTime(order.scheduled_pickup_time as string)}</p>
-        ) : (
-          <p className="mt-1 text-xs font-bold text-stone-600">Pickup: ASAP</p>
+        {(printState?.status === "failed" || printState?.status === "printed") && (
+          <p className={`mt-1 truncate text-[10px] font-black uppercase ${printState.status === "failed" ? "text-amber-700" : "text-green-700"}`}>
+            {printState.status === "failed" ? "Kitchen print failed — open to retry" : "Kitchen ticket printed"}
+          </p>
         )}
-        <p className="mt-1 truncate text-xs font-bold text-stone-600">
-          {order.customer_phone} · {itemCount} item{itemCount === 1 ? "" : "s"}{firstItems ? ` · ${firstItems}` : ""}{extraItems > 0 ? ` +${extraItems}` : ""}
-        </p>
-        <p className="mt-0.5 text-[11px] font-bold text-stone-500">{paymentLabel(order.payment_method, order.payment_status)}</p>
-        {isTestOrder && <p className="mt-1 inline-flex rounded-md bg-purple-600 px-2 py-0.5 text-[10px] font-black uppercase text-white">Test order</p>}
-        {primary && (
-          <button
-            onClick={(event) => { event.stopPropagation(); primary.run(); }}
-            disabled={busy}
-            className={`focus-ring mt-2 min-h-11 w-full rounded-md px-3 text-sm font-black shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${primary.className}`}
-          >
-            {busy ? "Saving..." : primary.label}
-          </button>
-        )}
-        {printState?.status === "failed" && <p className="mt-1 text-[11px] font-black uppercase text-amber-700">Kitchen print failed — open to retry</p>}
-        {printState?.status === "printed" && <p className="mt-1 text-[11px] font-black uppercase text-green-700">Kitchen ticket printed</p>}
       </article>
     );
   }
