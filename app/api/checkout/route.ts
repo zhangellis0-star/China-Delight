@@ -57,6 +57,10 @@ function priceCheckoutItems(rawItems: CartItem[]): { ok: true; items: CartItem[]
     // extraCharge fields are admin-dashboard-only; never accepted from the public checkout.
     delete customization.extraChargeLabel;
     delete customization.extraChargeAmount;
+    // Special-offer markers are server-created only. A browser-submitted cart item must never be
+    // able to label itself as a free reward on saved orders, receipts, or kitchen tickets.
+    delete customization.specialOffer;
+    delete customization.specialOfferTitle;
     if (hasReviewPrice(menuItem, customization.size)) {
       return { ok: false, error: `${menuItem.name} cannot be ordered online right now. Please call the restaurant.` };
     }
@@ -166,19 +170,25 @@ export async function POST(request: Request) {
   if (body.specialOfferId) {
     const offers = await getSpecialOffers();
     const offer = offers.find((candidate) => candidate.id === body.specialOfferId);
-    if (offer) {
-      const result = computeOffer(offer, items, subtotal);
-      if (result.applied) {
-        specialOfferLabel = offer.title;
-        for (const ref of result.freeItems) {
-          const line = buildFreeLine(ref.itemId, ref.quantity, offer);
-          if (line) items.push(line);
-        }
-        offerDiscount = result.discount;
-      } else {
-        console.warn("[checkout] Special offer not applied", { orderNumber, specialOfferId: body.specialOfferId, reason: result.reason });
-      }
+    if (!offer) {
+      return NextResponse.json({ error: "That special offer is no longer available. Please review your order and try again." }, { status: 400 });
     }
+
+    const result = computeOffer(offer, items, subtotal);
+    if (!result.applied) {
+      console.warn("[checkout] Special offer rejected", { orderNumber, specialOfferId: body.specialOfferId, reason: result.reason });
+      return NextResponse.json({ error: result.reason || "That special offer is not available for this cart." }, { status: 400 });
+    }
+
+    specialOfferLabel = offer.title;
+    for (const ref of result.freeItems) {
+      const line = buildFreeLine(ref.itemId, ref.quantity, offer);
+      if (!line) {
+        return NextResponse.json({ error: "That special offer item is no longer available. Please review your order and try again." }, { status: 400 });
+      }
+      items.push(line);
+    }
+    offerDiscount = result.discount;
   }
 
   const finalTotals = calculateCart(items, tip, discountAmount + offerDiscount);

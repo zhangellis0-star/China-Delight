@@ -19,7 +19,7 @@ import {
 } from "@/lib/order-rules";
 import { calculateCart, formatPrice } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode } from "@/lib/promo";
-import { computeOffer, offerSummary } from "@/lib/offer-logic";
+import { buildFreeLine, computeOffer, offerSummary } from "@/lib/offer-logic";
 import type { PublicSpecialOffer } from "@/lib/offer-logic";
 import type { AppliedPromo, CheckoutCustomer } from "@/types";
 
@@ -143,12 +143,16 @@ export default function CheckoutPage() {
     };
   }, []);
 
-  // Drop a chosen offer only if the admin removed/disabled it. Whether it currently applies is
-  // decided live by computeOffer, so a customer can keep it selected while they add the items.
+  // Drop a chosen offer if the admin removed it, or if the cart no longer qualifies.
+  // Locked offers cannot stay selected because free reward lines are only valid once unlocked.
   useEffect(() => {
     if (!selectedOfferId) return;
-    if (!specialOffers.some((candidate) => candidate.id === selectedOfferId)) setSelectedOfferId(null);
-  }, [selectedOfferId, specialOffers]);
+    if (!specialOffers.some((candidate) => candidate.id === selectedOfferId)) {
+      setSelectedOfferId(null);
+      return;
+    }
+    if (selectedOffer && !selectedOfferApplied) setSelectedOfferId(null);
+  }, [selectedOfferId, specialOffers, selectedOffer, selectedOfferApplied]);
 
   function applySchedule(dateStr: string, timeStr: string) {
     setPickupDate(dateStr);
@@ -253,10 +257,14 @@ export default function CheckoutPage() {
       alert(data.error ?? "Could not place the order. Please call the restaurant.");
       return;
     }
+    const confirmationItems =
+      selectedOffer && selectedOfferApplied && offerResult
+        ? [...items, ...offerResult.freeItems.map((free) => buildFreeLine(free.itemId, free.quantity, selectedOffer)).filter((line): line is NonNullable<typeof line> => Boolean(line))]
+        : items;
     const storedTotals = { ...totals, promoCode: appliedPromo?.code ?? null };
     window.localStorage.setItem(
       "china-delight-last-order",
-      JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items, totals: storedTotals, status: "new", placedAt: new Date().toISOString() })
+      JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items: confirmationItems, totals: storedTotals, status: "new", placedAt: new Date().toISOString() })
     );
     clearCart();
     router.push(`/confirmation?order=${data.orderNumber}`);
@@ -485,35 +493,45 @@ export default function CheckoutPage() {
                 {specialOffers.map((offer) => {
                   const selected = selectedOfferId === offer.id;
                   const result = computeOffer(offer, items, baseSubtotal);
+                  const unlocked = result.applied;
+                  const remaining = Math.max(0, Number(offer.minimumSubtotal ?? 0) - baseSubtotal);
+                  const lockedMessage = remaining > 0 ? `Spend ${formatPrice(remaining)} more to unlock this offer.` : result.reason;
                   const rewardNames = result.freeItems.map((free) => `${free.quantity > 1 ? `${free.quantity} x ` : ""}${offerItemName(offer, free.itemId)}`);
                   return (
                     <button
                       key={offer.id}
                       type="button"
-                      onClick={() => setSelectedOfferId(selected ? null : offer.id)}
-                      className={`focus-ring rounded-md border p-3 text-left ${selected ? "border-china-red bg-red-50" : "border-stone-300 bg-white"}`}
+                      disabled={!unlocked}
+                      onClick={() => {
+                        if (!unlocked) return;
+                        setSelectedOfferId(selected ? null : offer.id);
+                      }}
+                      className={`focus-ring rounded-md border p-3 text-left ${
+                        selected
+                          ? "border-china-red bg-red-50"
+                          : unlocked
+                            ? "border-stone-300 bg-white"
+                            : "cursor-not-allowed border-stone-200 bg-stone-50 opacity-80"
+                      }`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="min-w-0 break-words font-black">{offer.title}</span>
-                        <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-black ${selected ? "bg-china-red text-white" : "text-china-red"}`}>
-                          {selected ? "Selected" : "Tap to choose"}
+                        <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-black ${selected ? "bg-china-red text-white" : unlocked ? "bg-green-100 text-green-800" : "bg-stone-200 text-stone-600"}`}>
+                          {selected ? "Selected" : unlocked ? "Free item unlocked" : "Locked"}
                         </span>
                       </div>
                       <p className="mt-1 text-sm font-bold text-stone-600">{offerSummary(offer)}</p>
-                      {result.applied ? (
+                      {unlocked ? (
                         <p className="mt-1 text-sm font-black text-green-700">
                           {result.discount > 0 ? `Discount: -${formatPrice(result.discount)}` : `Free: ${rewardNames.join(", ")}`}
                         </p>
                       ) : (
-                        <p className="mt-1 text-sm font-bold text-stone-500">{result.reason}</p>
+                        <p className="mt-1 text-sm font-bold text-amber-800">{lockedMessage}</p>
                       )}
                     </button>
                   );
                 })}
               </div>
-              {selectedOffer && !selectedOfferApplied && (
-                <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{offerResult?.reason}</p>
-              )}
             </div>
           )}
 

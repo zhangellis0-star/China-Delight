@@ -187,7 +187,7 @@ export function escposTicket(order: PrintOrder) {
 
     if (freeOffer) {
       chunks.push(cmd.boldOn);
-      line("** FREE (SPECIAL OFFER) **");
+      line("** FREE SPECIAL OFFER **");
       chunks.push(cmd.boldOff);
     }
 

@@ -10,7 +10,7 @@ export function customizationParts(customization?: Partial<CartCustomization> | 
   const isSpecialOffer = Boolean((customization as { specialOffer?: unknown }).specialOffer);
 
   return [
-    isSpecialOffer ? "FREE (special offer)" : "",
+    isSpecialOffer ? "FREE SPECIAL OFFER" : "",
     customization.size ? `Size: ${customization.size}` : "",
     customization.lunchRice ? `Lunch rice: ${customization.lunchRice}` : "",
     customization.lunchSide ? `Lunch side: ${customization.lunchSide}` : "",
