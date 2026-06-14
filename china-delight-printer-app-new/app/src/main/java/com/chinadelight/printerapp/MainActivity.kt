@@ -43,8 +43,8 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 class MainActivity : Activity() {
-    private val adminUrl = "https://chinadelightct.com/admin"
-    private val siteUrl = "https://chinadelightct.com/"
+    private val adminUrl = "https://www.chinadelightct.com/admin"
+    private val siteUrl = "https://www.chinadelightct.com/"
     private val exampleUrl = "https://example.com/"
     private val defaultPrinterIp = "192.168.1.172"
     private val defaultPrinterPort = "9100"
@@ -52,6 +52,7 @@ class MainActivity : Activity() {
     private val mobileChromeUserAgent =
         "Mozilla/5.0 (Linux; Android 13; Lenovo Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
     private val handler = Handler(Looper.getMainLooper())
+    private val webHandler = Handler(Looper.getMainLooper())
     private val orderNumberRegex = Regex("\\b(?:CD|TEST)-\\d{6}-[A-Z0-9]{3}\\b", RegexOption.IGNORE_CASE)
 
     private lateinit var rootFrame: FrameLayout
@@ -66,6 +67,12 @@ class MainActivity : Activity() {
 
     private var lastOrderNumber = ""
     private var lastTicketBytes: ByteArray? = null
+    private var lastProgress = 0
+    private var lastWebUrl = ""
+    private var lastWebTitle = ""
+    private var lastWebError = "none"
+    private var clearStatusRunnable: Runnable? = null
+    private var loadTimeoutRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -211,10 +218,13 @@ class MainActivity : Activity() {
 
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    lastProgress = newProgress
+                    lastWebUrl = view?.url ?: lastWebUrl
                     setWebStatus("Progress $newProgress% | Current URL: ${view?.url ?: "(none)"}")
                 }
 
                 override fun onReceivedTitle(view: WebView?, title: String?) {
+                    lastWebTitle = title ?: ""
                     setWebStatus("Title: ${title ?: "(none)"} | URL: ${view?.url ?: "(none)"}")
                 }
 
@@ -227,20 +237,28 @@ class MainActivity : Activity() {
 
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    lastWebUrl = request?.url?.toString() ?: lastWebUrl
                     setWebStatus("Navigating to: ${request?.url ?: "(unknown)"}")
                     return false
                 }
 
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    lastWebUrl = url ?: lastWebUrl
+                    lastWebError = "none"
+                    startLoadWatchdog(url ?: "(unknown)")
                     setWebStatus("Page started: ${url ?: "(unknown)"}")
                 }
 
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
+                    lastWebUrl = url ?: lastWebUrl
                     setWebStatus("Page visible: ${url ?: "(unknown)"}")
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
+                    stopLoadWatchdog()
                     val finalUrl = url ?: view?.url ?: "(unknown)"
+                    lastWebUrl = finalUrl
+                    lastWebTitle = view?.title ?: ""
                     setWebStatus("Page finished. Final URL: $finalUrl | Title: ${view?.title ?: "(none)"}")
                     injectDiagnostics(view)
                     view?.evaluateJavascript(injectionJs(), null)
@@ -248,6 +266,7 @@ class MainActivity : Activity() {
 
                 override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
                     if (request?.isForMainFrame == true) {
+                        lastWebError = "HTTP ${errorResponse?.statusCode}: ${errorResponse?.reasonPhrase ?: ""}"
                         setWebStatus("HTTP error ${errorResponse?.statusCode}: ${errorResponse?.reasonPhrase ?: ""} | URL: ${request.url}")
                     }
                 }
@@ -255,6 +274,8 @@ class MainActivity : Activity() {
                 override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                     if (request?.isForMainFrame == true) {
                         val message = "Load error ${error?.errorCode}: ${error?.description ?: "unknown"} | URL: ${request.url}"
+                        lastWebError = message
+                        stopLoadWatchdog()
                         setWebStatus(message)
                         showWebError(message)
                     }
@@ -263,12 +284,16 @@ class MainActivity : Activity() {
                 @Suppress("DEPRECATION")
                 override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
                     val message = "Load error $errorCode: ${description ?: "unknown"} | URL: ${failingUrl ?: "(unknown)"}"
+                    lastWebError = message
+                    stopLoadWatchdog()
                     setWebStatus(message)
                     showWebError(message)
                 }
 
                 override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
                     val message = "SSL error ${error?.primaryError} | URL: ${error?.url ?: "(unknown)"}"
+                    lastWebError = message
+                    stopLoadWatchdog()
                     setWebStatus(message)
                     handler?.cancel()
                     showWebError(message)
@@ -297,6 +322,21 @@ class MainActivity : Activity() {
     }
 
     private fun currentOrAdminUrl(): String = webView.url ?: adminUrl
+
+    private fun startLoadWatchdog(url: String) {
+        stopLoadWatchdog()
+        loadTimeoutRunnable = Runnable {
+            if (lastProgress < 100) {
+                setWebStatus("Load timeout after 10s | URL: ${lastWebUrl.ifBlank { url }} | Progress: $lastProgress% | Title: ${lastWebTitle.ifBlank { "(none)" }} | Last error: $lastWebError")
+            }
+        }
+        webHandler.postDelayed(loadTimeoutRunnable!!, 10_000)
+    }
+
+    private fun stopLoadWatchdog() {
+        loadTimeoutRunnable?.let { webHandler.removeCallbacks(it) }
+        loadTimeoutRunnable = null
+    }
 
     private fun clearWebViewData() {
         setWebStatus("Clearing WebView cache, history, form data, and cookies...")
@@ -566,10 +606,14 @@ class MainActivity : Activity() {
     private fun printerPort() = prefs().getString("printerPort", defaultPrinterPort)?.trim()?.toIntOrNull() ?: 9100
 
     private fun setAppStatus(message: String, autoClear: Boolean = false) {
-        handler.removeCallbacksAndMessages(null)
+        clearStatusRunnable?.let { handler.removeCallbacks(it) }
+        clearStatusRunnable = null
         runOnUiThread {
             appStatus.text = message
-            if (autoClear) handler.postDelayed({ appStatus.text = "Ready." }, 6000)
+            if (autoClear) {
+                clearStatusRunnable = Runnable { appStatus.text = "Ready." }
+                handler.postDelayed(clearStatusRunnable!!, 6000)
+            }
         }
     }
 

@@ -15,9 +15,9 @@ The main workflow loads the real China Delight admin website inside an Android W
 
 ## Admin WebView
 
-The app loads:
+The app loads the canonical website host directly:
 
-`https://chinadelightct.com/admin`
+`https://www.chinadelightct.com/admin`
 
 Diagnostics are shown for:
 
@@ -27,12 +27,13 @@ Diagnostics are shown for:
 - HTTP errors
 - SSL errors
 - console and JavaScript errors
+- 10-second load timeout with last URL/progress/error
 
 The top bar includes test loads for:
 
 - `https://example.com/`
-- `https://chinadelightct.com/`
-- `https://chinadelightct.com/admin`
+- `https://www.chinadelightct.com/`
+- `https://www.chinadelightct.com/admin`
 
 ## Build APK
 
