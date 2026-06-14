@@ -5,31 +5,16 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
-import android.util.Base64
 import android.text.InputType
-import android.view.Gravity
-import android.view.View
+import android.util.Base64
 import android.view.WindowManager
-import android.graphics.Bitmap
-import android.net.http.SslError
-import android.webkit.CookieManager
-import android.webkit.ConsoleMessage
-import android.webkit.JavascriptInterface
-import android.webkit.SslErrorHandler
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
@@ -40,623 +25,263 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 
-/**
- * China Delight Kitchen Printer bridge.
- *
- * Two screens managed by visibility:
- *  - Controls screen (scrollable): printer settings, main actions, manual backup, status log.
- *  - Admin screen (full screen): the website admin loaded in a WebView that fills the area so the
- *    page scrolls natively. A small injected "Print to Epson" button is added to each order card;
- *    tapping it fetches the existing payload endpoint (using the admin session cookie) and prints
- *    the decoded ESC/POS bytes straight to the Epson over raw TCP. Manual + test printing remain.
- */
 class MainActivity : Activity() {
     private val defaultAdminUrl = "https://chinadelightct.com/admin"
     private val defaultPrinterIp = "192.168.1.172"
     private val defaultPrinterPort = "9100"
-    private val printerTimeoutMs = 5000
-    private val mobileChromeUserAgent =
-        "Mozilla/5.0 (Linux; Android 13; Lenovo Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+    private val timeoutMs = 5000
+    private val activeStatuses = setOf("new", "accepted", "preparing", "ready")
 
+    private lateinit var statusText: TextView
+    private lateinit var printerIpInput: EditText
+    private lateinit var printerPortInput: EditText
     private lateinit var adminUrlInput: EditText
     private lateinit var adminPasswordInput: EditText
     private lateinit var orderNumberInput: EditText
-    private lateinit var printerIpInput: EditText
-    private lateinit var printerPortInput: EditText
-    private lateinit var statusText: TextView
-
-    private lateinit var controlsScreen: ScrollView
-    private lateinit var adminScreen: LinearLayout
-    private lateinit var webView: WebView
-    private lateinit var webStatus: TextView
-
-    private lateinit var fetchTicketButton: Button
-    private lateinit var printOrderButton: Button
-    private lateinit var testPrintButton: Button
     private lateinit var recentOrdersContainer: LinearLayout
 
     private var lastOrderNumber: String = ""
     private var lastTicketBytes: ByteArray? = null
 
-    private val orderNumberRegex = Regex("\\b(?:CD|TEST)-\\d{6}-[A-Z0-9]{3}\\b", RegexOption.IGNORE_CASE)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val prefs = getSharedPreferences("bridge-settings", MODE_PRIVATE)
-        adminUrlInput = editText(prefs.getString("adminUrl", defaultAdminUrl) ?: defaultAdminUrl, "Website/admin URL")
-        adminPasswordInput = editText("", "Admin password").apply {
+        val prefs = prefs()
+        printerIpInput = input(prefs.getString("printerIp", defaultPrinterIp) ?: defaultPrinterIp, "Printer IP")
+        printerPortInput = input(prefs.getString("printerPort", defaultPrinterPort) ?: defaultPrinterPort, "Printer port")
+        adminUrlInput = input(prefs.getString("adminUrl", defaultAdminUrl) ?: defaultAdminUrl, "Website/admin URL")
+        adminPasswordInput = input("", "Admin password").apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
-        orderNumberInput = editText("", "Order number (e.g. CD-123456-ABC)")
-        printerIpInput = editText(prefs.getString("printerIp", defaultPrinterIp) ?: defaultPrinterIp, "Printer IP")
-        printerPortInput = editText(prefs.getString("printerPort", defaultPrinterPort) ?: defaultPrinterPort, "Printer port")
+        orderNumberInput = input("", "Order number, e.g. CD-123456-ABC")
         statusText = TextView(this).apply {
-            text = "Ready. Native printing works without WebView: log in, load orders, then print."
+            text = "Ready."
             textSize = 16f
-            setPadding(0, 16, 0, 16)
+            setTextColor(Color.parseColor("#222222"))
+            setPadding(0, 8, 0, 16)
         }
+        recentOrdersContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        recentOrdersContainer.addView(note("Log in, then tap Load recent active orders."))
 
-        buildWebView()
-        controlsScreen = buildControlsScreen()
-        adminScreen = buildAdminScreen()
-
-        val rootFrame = FrameLayout(this)
-        rootFrame.addView(controlsScreen, matchParent())
-        rootFrame.addView(adminScreen, matchParent())
-        adminScreen.visibility = View.GONE
-        setContentView(rootFrame)
-
-        updateButtonStates()
-    }
-
-    // ---- Controls screen --------------------------------------------------
-
-    private fun buildControlsScreen(): ScrollView {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(28, 28, 28, 28)
         }
-
         root.addView(TextView(this).apply {
             text = "China Delight Kitchen Printer"
             textSize = 24f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
+        root.addView(statusText)
 
-        root.addView(sectionLabel("Printer settings"))
+        root.addView(section("Printer settings"))
         root.addView(printerIpInput)
         root.addView(printerPortInput)
-        root.addView(adminUrlInput)
         root.addView(button("Save settings") {
             saveSettings()
             setStatus("Settings saved. Printer ${printerHost()}:${printerPort()}.")
         })
+        root.addView(button("Test Print") {
+            saveSettings()
+            printBytes(testTicketBytes(), "test ticket")
+        })
 
-        root.addView(sectionLabel("Main actions"))
+        root.addView(section("Admin / order access"))
+        root.addView(adminUrlInput)
         root.addView(adminPasswordInput)
-        root.addView(button("Log in for native printing") { loginAdmin() })
-        root.addView(button("Load recent orders") { loadRecentOrders() })
+        root.addView(button("Log in") { loginAdmin() })
+        root.addView(button("Load recent active orders") { loadRecentOrders() })
         root.addView(button("Open Admin in Chrome") {
             saveSettings()
             openExternal(adminUrl())
         })
-        root.addView(button("Open Admin WebView (diagnostic)") { openAdmin() })
-        testPrintButton = button("Test Print") {
-            saveSettings()
-            printBytes(testTicketBytes(), "Test ticket")
-        }
-        root.addView(testPrintButton)
 
-        root.addView(sectionLabel("Recent orders"))
-        recentOrdersContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        recentOrdersContainer.addView(TextView(this).apply {
-            text = "Tap Log in, then Load recent orders."
-            textSize = 14f
-            setPadding(0, 8, 0, 8)
-        })
+        root.addView(section("Recent orders"))
         root.addView(recentOrdersContainer)
 
-        root.addView(sectionLabel("Manual print backup"))
+        root.addView(section("Manual backup print"))
         root.addView(orderNumberInput)
-        fetchTicketButton = button("Fetch ticket") { fetchTicketOnly() }
-        root.addView(fetchTicketButton)
-        printOrderButton = button("Print order") { fetchAndPrintOrder() }
-        root.addView(printOrderButton)
+        root.addView(button("Fetch ticket") { fetchTicketOnly() })
+        root.addView(button("Print order") { printManualOrder() })
+        root.addView(button("Fetch & Print") { fetchAndPrintOrder(orderNumberInput.text.toString().trim()) })
 
-        root.addView(sectionLabel("Status"))
-        root.addView(statusText)
-
-        // Keep button enabled-state in sync with the inputs they depend on.
-        orderNumberInput.addTextChangedListener(simpleWatcher { updateButtonStates() })
-        printerIpInput.addTextChangedListener(simpleWatcher { updateButtonStates() })
-
-        return ScrollView(this).apply { addView(root) }
+        setContentView(ScrollView(this).apply { addView(root) })
     }
-
-    // ---- Admin screen (full-screen WebView) -------------------------------
-
-    private fun buildAdminScreen(): LinearLayout {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.WHITE)
-        }
-
-        val topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(16, 8, 16, 8)
-            setBackgroundColor(Color.parseColor("#FFF7E8"))
-        }
-        topBar.addView(button("← Back") { showControlsScreen() })
-        topBar.addView(button("Reload") { reloadAdmin() })
-        topBar.addView(button("Clear Cache") { clearWebViewData() })
-        topBar.addView(button("Open Chrome") { openExternal(adminUrl()) })
-        topBar.addView(button("Re-scan orders") {
-            webView.evaluateJavascript(injectionJs(), null)
-            setStatus("Re-added print buttons to visible orders.")
-        })
-        container.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
-        val diagnosticBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(16, 4, 16, 4)
-            setBackgroundColor(Color.WHITE)
-        }
-        diagnosticBar.addView(button("Load site") { loadUrl("https://chinadelightct.com/") })
-        diagnosticBar.addView(button("Load example") { loadUrl("https://example.com/") })
-        container.addView(diagnosticBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
-        // Visible load/error status line so the WebView never just shows blank white.
-        webStatus = TextView(this).apply {
-            text = ""
-            textSize = 12f
-            setPadding(16, 6, 16, 6)
-            setTextColor(Color.parseColor("#7a3d00"))
-            setBackgroundColor(Color.parseColor("#FFF7CC"))
-        }
-        container.addView(webStatus, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
-        // WebView fills the rest of the screen (weight = 1) and scrolls natively.
-        container.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-        return container
-    }
-
-    private fun buildWebView() {
-        WebView.setWebContentsDebuggingEnabled(true)
-        webView = WebView(this).apply {
-            setBackgroundColor(Color.WHITE)
-            setLayerType(View.LAYER_TYPE_HARDWARE, null)
-            settings.javaScriptEnabled = true
-            settings.javaScriptCanOpenWindowsAutomatically = true
-            settings.domStorageEnabled = true
-            settings.databaseEnabled = true
-            settings.loadsImagesAutomatically = true
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            settings.cacheMode = WebSettings.LOAD_NO_CACHE
-            settings.userAgentString = mobileChromeUserAgent
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = false
-            settings.builtInZoomControls = false
-            settings.displayZoomControls = false
-            settings.mediaPlaybackRequiresUserGesture = false
-            settings.setSupportMultipleWindows(false)
-            isNestedScrollingEnabled = true
-            CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            addJavascriptInterface(PrintBridge(), "AndroidPrintBridge")
-
-            webChromeClient = object : WebChromeClient() {
-                override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                    if (newProgress in 1..99) setWebStatus("Loading ${view?.url ?: adminUrl()} - $newProgress%")
-                    if (newProgress == 100) setWebStatus("Loaded ${view?.url ?: adminUrl()} - 100%")
-                }
-
-                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                    consoleMessage ?: return false
-                    setWebStatus("Console ${consoleMessage.messageLevel()}: ${consoleMessage.message()}")
-                    return false
-                }
-            }
-
-            webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                    setWebStatus("Loading ${url ?: ""} ...")
-                }
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    if (url != null && url != "about:blank" && !url.startsWith("data:")) {
-                        setWebStatus("Loaded $url")
-                    }
-                    view?.evaluateJavascript(injectionJs(), null)
-                }
-                override fun onPageCommitVisible(view: WebView?, url: String?) {
-                    setWebStatus("Page visible: ${url ?: ""}")
-                }
-                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                    if (request?.isForMainFrame == true) {
-                        val desc = error?.description?.toString() ?: "Load failed"
-                        val code = error?.errorCode
-                        setWebStatus("Error${if (code != null) " $code" else ""}: $desc - ${request.url}")
-                        showWebError(view, request.url.toString(), desc, code)
-                    }
-                }
-                @Suppress("DEPRECATION")
-                override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
-                    setWebStatus("Error $errorCode: ${description ?: ""} - ${failingUrl ?: ""}")
-                    showWebError(view, failingUrl ?: "", description ?: "Load failed", errorCode)
-                }
-                override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
-                    if (request?.isForMainFrame == true) {
-                        setWebStatus("HTTP ${errorResponse?.statusCode} ${errorResponse?.reasonPhrase ?: ""} - ${request.url}")
-                    }
-                }
-                override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                    setWebStatus("SSL error (${error?.primaryError}) - ${error?.url}. Page not loaded for safety.")
-                    handler?.cancel()
-                }
-            }
-        }
-    }
-
-    private fun openAdmin() {
-        saveSettings()
-        showAdminScreen()
-        val url = adminUrl()
-        setWebStatus("Loading $url ...")
-        setStatus("Admin opened. Log in if needed, then tap \"Print to Epson\" on an order.")
-        // Load after the view is visible + laid out so the WebView surface renders (avoids blank white).
-        webView.postDelayed({ webView.loadUrl(url) }, 250)
-    }
-
-    private fun reloadAdmin() {
-        loadUrl(adminUrl())
-    }
-
-    private fun loadUrl(url: String) {
-        showAdminScreen()
-        setWebStatus("Loading $url ...")
-        webView.postDelayed({ webView.loadUrl(url) }, 150)
-    }
-
-    private fun clearWebViewData() {
-        setWebStatus("Clearing WebView cache and cookies...")
-        webView.stopLoading()
-        webView.clearCache(true)
-        webView.clearHistory()
-        webView.clearFormData()
-        CookieManager.getInstance().removeAllCookies {
-            CookieManager.getInstance().flush()
-            setWebStatus("WebView cache/cookies cleared. Tap Open Admin and log in again.")
-            setStatus("WebView cache cleared. Open Admin and log in again.")
-            webView.loadUrl("about:blank")
-        }
-    }
-
-    private fun openExternal(url: String) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            setStatus("Opened $url in Chrome/browser.")
-        } catch (error: Exception) {
-            setStatus("Could not open Chrome/browser: ${error.message}")
-        }
-    }
-
-    private fun setWebStatus(message: String) {
-        runOnUiThread { if (::webStatus.isInitialized) webStatus.text = message }
-    }
-
-    private fun showWebError(view: WebView?, url: String, description: String, code: Int?) {
-        val html = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head>" +
-            "<body style='font-family:sans-serif;padding:24px;color:#222'>" +
-            "<h2 style='color:#b81d1d'>Could not load the admin page</h2>" +
-            "<p><b>URL:</b> ${escapeHtml(url)}</p>" +
-            "<p><b>Error:</b> ${escapeHtml(description)}${if (code != null) " (code $code)" else ""}</p>" +
-            "<p>Check the tablet Wi-Fi / internet connection, then tap RELOAD in the top bar.</p>" +
-            "</body></html>"
-        view?.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
-    }
-
-    private fun escapeHtml(value: String): String {
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-    }
-
-    private fun showAdminScreen() {
-        controlsScreen.visibility = View.GONE
-        adminScreen.visibility = View.VISIBLE
-    }
-
-    private fun showControlsScreen() {
-        adminScreen.visibility = View.GONE
-        controlsScreen.visibility = View.VISIBLE
-        updateButtonStates()
-    }
-
-    override fun onBackPressed() {
-        if (adminScreen.visibility == View.VISIBLE) {
-            if (webView.canGoBack()) webView.goBack() else showControlsScreen()
-            return
-        }
-        super.onBackPressed()
-    }
-
-    // ---- Native recent-order printing (does not depend on WebView) --------
 
     private fun loginAdmin() {
         val password = adminPasswordInput.text.toString()
         if (password.isBlank()) {
-            setStatus("Enter the admin password first.")
+            setStatus("Login failed: enter admin password.")
             return
         }
         saveSettings()
         setStatus("Logging in...")
         Thread {
             try {
-                val url = URL(apiUrl("/api/admin/login"))
                 val body = JSONObject().put("password", password).toString().toByteArray(StandardCharsets.UTF_8)
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = printerTimeoutMs
-                    readTimeout = printerTimeoutMs
+                val connection = openConnection(apiUrl("/api/admin/login"), "POST").apply {
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json")
                     outputStream.use { it.write(body) }
                 }
-                val status = connection.responseCode
-                val responseBody = readBody(if (status in 200..299) connection.inputStream else connection.errorStream)
-                if (status !in 200..299) throw IllegalStateException("Login returned $status: $responseBody")
+                val response = readResponse(connection)
+                if (!response.ok) throw IllegalStateException("Login failed: ${response.status} ${snippet(response.body)}")
                 val cookie = connection.headerFields["Set-Cookie"]?.firstOrNull()?.substringBefore(";") ?: ""
-                if (cookie.isBlank()) throw IllegalStateException("Login succeeded but no admin cookie was returned.")
+                if (cookie.isBlank()) throw IllegalStateException("Login failed: no session cookie returned.")
                 prefs().edit().putString("adminCookie", cookie).apply()
-                CookieManager.getInstance().setCookie(adminUrl(), cookie)
-                CookieManager.getInstance().flush()
                 runOnUiThread {
                     adminPasswordInput.text.clear()
-                    setStatus("Logged in. Tap Load recent orders.")
+                    setStatus("Logged in. Tap Load recent active orders.")
                 }
             } catch (error: Exception) {
-                runOnUiThread { setStatus("Login failed: ${error.message}") }
+                runOnUiThread { setStatus(error.message ?: "Login failed.") }
             }
         }.start()
     }
 
     private fun loadRecentOrders() {
         saveSettings()
-        setStatus("Loading recent orders...")
+        setStatus("Loading recent active orders...")
         Thread {
             try {
-                val url = URL(apiUrl("/api/orders?status=all"))
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = printerTimeoutMs
-                    readTimeout = printerTimeoutMs
+                val endpoint = apiUrl("/api/orders?status=all")
+                val connection = openConnection(endpoint, "GET").apply {
                     setRequestProperty("Accept", "application/json")
-                    authCookieHeader()?.let { setRequestProperty("Cookie", it) }
+                    authCookie()?.let { setRequestProperty("Cookie", it) }
                 }
-                val status = connection.responseCode
-                val body = readBody(if (status in 200..299) connection.inputStream else connection.errorStream)
-                if (status == 401) throw IllegalStateException("Not logged in. Enter admin password and tap Log in first.")
-                if (status !in 200..299) throw IllegalStateException("Orders endpoint returned $status: $body")
-                val orders = JSONObject(body).getJSONArray("orders")
+                val response = readResponse(connection)
+                if (response.status == 401) throw IllegalStateException("Recent orders failed: not logged in. Enter password and tap Log in.")
+                if (!response.ok) throw IllegalStateException("Recent orders failed: $endpoint returned ${response.status}: ${snippet(response.body)}")
+                val orders = JSONObject(response.body).getJSONArray("orders")
                 runOnUiThread {
-                    renderRecentOrders(orders)
-                    setStatus("Loaded ${orders.length()} recent orders.")
+                    renderOrders(orders)
+                    setStatus("Loaded recent active orders.")
                 }
             } catch (error: Exception) {
-                runOnUiThread { setStatus("Load orders failed: ${error.message}") }
+                runOnUiThread { setStatus(error.message ?: "Recent orders failed.") }
             }
         }.start()
     }
 
-    private fun renderRecentOrders(orders: org.json.JSONArray) {
+    private fun renderOrders(orders: JSONArray) {
         recentOrdersContainer.removeAllViews()
-        val activeStatuses = setOf("new", "accepted", "preparing", "ready")
         var shown = 0
         for (index in 0 until orders.length()) {
             val order = orders.getJSONObject(index)
             val status = order.optString("status")
-            if (shown >= 30) break
-            if (status !in activeStatuses && shown >= 10) continue
+            if (status !in activeStatuses) continue
             shown += 1
             recentOrdersContainer.addView(orderRow(order))
+            if (shown >= 30) break
         }
         if (shown == 0) {
-            recentOrdersContainer.addView(TextView(this).apply {
-                text = "No recent orders returned."
-                textSize = 14f
-                setPadding(0, 8, 0, 8)
-            })
+            recentOrdersContainer.addView(note("No recent active orders found."))
         }
     }
 
     private fun orderRow(order: JSONObject): LinearLayout {
         val orderNumber = order.optString("order_number")
-        val customer = order.optString("customer_name")
-        val phone = order.optString("customer_phone")
         val status = order.optString("status")
-        val pickup = if (order.optString("pickup_time_type") == "scheduled") {
-            "Scheduled: ${shortTime(order.optString("scheduled_pickup_time"))}"
-        } else {
-            "ASAP"
-        }
+        val customer = order.optString("customer_name")
+        val pickup = pickupText(order)
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 12, 0, 12)
+            setPadding(0, 14, 0, 14)
             addView(TextView(this@MainActivity).apply {
-                text = "$orderNumber  |  $status  |  $pickup\n$customer  $phone"
-                textSize = 16f
+                text = "$orderNumber\n$customer\n$pickup | $status"
+                textSize = 17f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
-            addView(button("Print $orderNumber to Epson") {
-                orderNumberInput.setText(orderNumber)
-                fetchAndPrintOrder()
-            })
+            addView(button("Print to Epson") { fetchAndPrintOrder(orderNumber) })
         }
     }
-
-    // ---- One-tap print bridge (called from injected JS) -------------------
-
-    inner class PrintBridge {
-        // Invoked on the WebView's binder thread (not the UI thread).
-        @JavascriptInterface
-        fun printOrder(orderNumber: String) {
-            val trimmed = orderNumber.trim()
-            if (!orderNumberRegex.matches(trimmed)) {
-                runOnUiThread {
-                    setStatus("Could not read a valid order number from that order.")
-                    toast("Invalid order number")
-                }
-                return
-            }
-            runOnUiThread { setStatus("Printing $trimmed...") }
-            Thread {
-                try {
-                    val bytes = fetchTicketPayload(trimmed)
-                    sendToPrinter(bytes)
-                    lastOrderNumber = trimmed
-                    lastTicketBytes = bytes
-                    runOnUiThread {
-                        setStatus("Printed $trimmed successfully.")
-                        toast("Printed $trimmed")
-                    }
-                } catch (error: Exception) {
-                    runOnUiThread {
-                        setStatus("Print failed for $trimmed: ${error.message}")
-                        toast("Print failed: ${error.message}")
-                    }
-                }
-            }.start()
-        }
-    }
-
-    /** JS injected into the admin page: adds a "Print to Epson" button to each order card. */
-    private fun injectionJs(): String = """
-        (function(){
-          var ORDER = /\b(?:CD|TEST)-\d{6}-[A-Z0-9]{3}\b/i;
-          function makeBtn(orderNumber){
-            var b = document.createElement('button');
-            b.textContent = '🖨 Print to Epson';
-            b.className = 'cd-print-btn';
-            b.style.cssText = 'display:block;width:100%;margin-top:8px;padding:12px;border:0;border-radius:8px;background:#0f7a3d;color:#fff;font-weight:800;font-size:15px;';
-            b.addEventListener('click', function(ev){
-              ev.preventDefault();
-              ev.stopPropagation();
-              ev.stopImmediatePropagation();
-              b.textContent = 'Sending...';
-              setTimeout(function(){ b.textContent = '🖨 Print to Epson'; }, 1500);
-              try { AndroidPrintBridge.printOrder(orderNumber); } catch (e) {}
-            }, false);
-            return b;
-          }
-          function scan(){
-            var cards = document.querySelectorAll('article');
-            for (var i=0;i<cards.length;i++){
-              var c = cards[i];
-              if (c.querySelector('.cd-print-btn')) continue;
-              var m = (c.textContent || '').match(ORDER);
-              if (!m) continue;
-              c.appendChild(makeBtn(m[0]));
-            }
-          }
-          window.__cdScan = scan;
-          if (!window.__cdObserver){
-            var timer = null;
-            window.__cdObserver = new MutationObserver(function(){
-              if (timer) clearTimeout(timer);
-              timer = setTimeout(scan, 250);
-            });
-            window.__cdObserver.observe(document.body, { childList: true, subtree: true });
-          }
-          scan();
-        })();
-    """.trimIndent()
-
-    // ---- Manual backup flow (unchanged behavior) --------------------------
 
     private fun fetchTicketOnly() {
         val orderNumber = orderNumberInput.text.toString().trim()
         if (orderNumber.isBlank()) {
-            setStatus("Enter an order number first.")
+            setStatus("Enter order number.")
             return
         }
         saveSettings()
-        setStatus("Fetching ticket payload for $orderNumber...")
+        setStatus("Fetching ticket for $orderNumber...")
         Thread {
             try {
                 val bytes = fetchTicketPayload(orderNumber)
                 lastOrderNumber = orderNumber
                 lastTicketBytes = bytes
-                runOnUiThread { setStatus("Fetched $orderNumber (${bytes.size} bytes). Ready to print.") }
+                runOnUiThread { setStatus("Fetched $orderNumber (${bytes.size} bytes).") }
             } catch (error: Exception) {
-                runOnUiThread { setStatus("Fetch failed: ${error.message}") }
+                runOnUiThread { setStatus(error.message ?: "Payload failed.") }
             }
         }.start()
     }
 
-    private fun fetchAndPrintOrder() {
+    private fun printManualOrder() {
         val orderNumber = orderNumberInput.text.toString().trim()
         if (orderNumber.isBlank()) {
-            setStatus("Enter an order number first.")
+            setStatus("Enter order number.")
+            return
+        }
+        if (lastOrderNumber == orderNumber && lastTicketBytes != null) {
+            printBytes(lastTicketBytes!!, "order $orderNumber")
+        } else {
+            fetchAndPrintOrder(orderNumber)
+        }
+    }
+
+    private fun fetchAndPrintOrder(orderNumber: String) {
+        if (orderNumber.isBlank()) {
+            setStatus("Enter order number.")
             return
         }
         saveSettings()
         setStatus("Fetching and printing $orderNumber...")
         Thread {
             try {
-                val bytes = if (lastOrderNumber == orderNumber && lastTicketBytes != null) {
-                    lastTicketBytes!!
-                } else {
-                    fetchTicketPayload(orderNumber).also {
-                        lastOrderNumber = orderNumber
-                        lastTicketBytes = it
-                    }
-                }
+                val bytes = fetchTicketPayload(orderNumber)
                 sendToPrinter(bytes)
-                runOnUiThread { setStatus("Printed order $orderNumber successfully.") }
+                lastOrderNumber = orderNumber
+                lastTicketBytes = bytes
+                runOnUiThread { setStatus("Printed $orderNumber successfully.") }
             } catch (error: Exception) {
-                runOnUiThread { setStatus("Print failed: ${error.message}") }
+                runOnUiThread { setStatus(error.message ?: "Print failed.") }
             }
         }.start()
     }
 
+    private fun fetchTicketPayload(orderNumber: String): ByteArray {
+        val encoded = URLEncoder.encode(orderNumber, StandardCharsets.UTF_8.name())
+        val endpoint = "${apiUrl("/api/admin/print-ticket/payload")}?orderNumber=$encoded"
+        val connection = openConnection(endpoint, "GET").apply {
+            setRequestProperty("Accept", "application/json")
+            authCookie()?.let { setRequestProperty("Cookie", it) }
+        }
+        val response = readResponse(connection)
+        if (response.status == 401) throw IllegalStateException("Payload failed: not logged in. Enter password and tap Log in.")
+        if (!response.ok) throw IllegalStateException("Payload failed: $endpoint returned ${response.status}: ${snippet(response.body)}")
+        val json = JSONObject(response.body)
+        if (!json.optBoolean("success")) throw IllegalStateException("Payload failed: ${snippet(response.body)}")
+        val base64 = json.optString("escposBase64")
+        if (base64.isBlank()) throw IllegalStateException("Payload failed: missing escposBase64.")
+        return Base64.decode(base64, Base64.DEFAULT)
+    }
+
     private fun printBytes(bytes: ByteArray, label: String) {
+        saveSettings()
         setStatus("Printing $label...")
         Thread {
             try {
                 sendToPrinter(bytes)
-                runOnUiThread { setStatus("$label printed successfully.") }
+                runOnUiThread { setStatus("Printed $label successfully.") }
             } catch (error: Exception) {
-                runOnUiThread { setStatus("$label failed: ${error.message}") }
+                runOnUiThread { setStatus(error.message ?: "Printer failed.") }
             }
         }.start()
-    }
-
-    // ---- Networking + printing (reused raw TCP code) ----------------------
-
-    private fun fetchTicketPayload(orderNumber: String): ByteArray {
-        val encodedOrder = URLEncoder.encode(orderNumber, StandardCharsets.UTF_8.name())
-        val url = URL("${payloadUrl()}?orderNumber=$encodedOrder")
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = printerTimeoutMs
-            readTimeout = printerTimeoutMs
-            setRequestProperty("Accept", "application/json")
-            authCookieHeader()?.let { setRequestProperty("Cookie", it) }
-        }
-        val status = connection.responseCode
-        val body = readBody(if (status in 200..299) connection.inputStream else connection.errorStream)
-        if (status == 401) throw IllegalStateException("Not logged in. Open Admin in this app and sign in first.")
-        if (status !in 200..299) throw IllegalStateException("Payload endpoint returned $status: $body")
-        val json = JSONObject(body)
-        if (!json.optBoolean("success")) throw IllegalStateException(json.optString("error", "Payload request failed."))
-        val base64 = json.optString("escposBase64")
-        if (base64.isBlank()) throw IllegalStateException("Payload did not include escposBase64.")
-        return Base64.decode(base64, Base64.DEFAULT)
     }
 
     private fun sendToPrinter(bytes: ByteArray) {
@@ -664,122 +289,86 @@ class MainActivity : Activity() {
         val port = printerPort()
         try {
             Socket().use { socket ->
-                socket.connect(InetSocketAddress(host, port), printerTimeoutMs)
-                socket.soTimeout = printerTimeoutMs
+                socket.connect(InetSocketAddress(host, port), timeoutMs)
+                socket.soTimeout = timeoutMs
                 socket.getOutputStream().use { output ->
                     output.write(bytes)
                     output.flush()
                 }
             }
         } catch (error: Exception) {
-            throw IllegalStateException("Could not reach printer at $host:$port (${error.message})")
+            throw IllegalStateException("Printer failed: $host:$port (${error.message})")
         }
     }
 
-    private fun readBody(stream: java.io.InputStream?): String {
-        if (stream == null) return ""
-        return stream.bufferedReader().use { it.readText() }
+    private fun openConnection(endpoint: String, method: String): HttpURLConnection {
+        return (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
+        }
     }
 
-    // ---- Settings + helpers ----------------------------------------------
+    private fun readResponse(connection: HttpURLConnection): HttpResponse {
+        val status = connection.responseCode
+        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+        val body = stream?.bufferedReader()?.use { it.readText() } ?: ""
+        return HttpResponse(status, body, status in 200..299)
+    }
+
+    private data class HttpResponse(val status: Int, val body: String, val ok: Boolean)
 
     private fun saveSettings() {
-        getSharedPreferences("bridge-settings", MODE_PRIVATE).edit()
-            .putString("adminUrl", adminUrlInput.text.toString().trim().ifBlank { defaultAdminUrl })
+        prefs().edit()
             .putString("printerIp", printerIpInput.text.toString().trim().ifBlank { defaultPrinterIp })
             .putString("printerPort", printerPortInput.text.toString().trim().ifBlank { defaultPrinterPort })
+            .putString("adminUrl", adminUrlInput.text.toString().trim().ifBlank { defaultAdminUrl })
             .apply()
     }
 
     private fun prefs() = getSharedPreferences("bridge-settings", MODE_PRIVATE)
-    private fun adminUrl() = prefs().getString("adminUrl", defaultAdminUrl)?.trim()?.ifBlank { defaultAdminUrl } ?: defaultAdminUrl
     private fun printerHost() = prefs().getString("printerIp", defaultPrinterIp)?.trim()?.ifBlank { defaultPrinterIp } ?: defaultPrinterIp
     private fun printerPort() = prefs().getString("printerPort", defaultPrinterPort)?.trim()?.toIntOrNull() ?: 9100
-
-    // Derive the payload endpoint from the admin URL origin so the cookie host always matches.
-    private fun payloadUrl(): String {
-        return apiUrl("/api/admin/print-ticket/payload")
-    }
+    private fun adminUrl() = prefs().getString("adminUrl", defaultAdminUrl)?.trim()?.ifBlank { defaultAdminUrl } ?: defaultAdminUrl
+    private fun authCookie() = prefs().getString("adminCookie", "")?.trim()?.takeIf { it.isNotBlank() }
 
     private fun apiUrl(path: String): String {
         return try {
-            val u = URL(adminUrl())
-            val authority = if (u.port == -1) u.host else "${u.host}:${u.port}"
-            "${u.protocol}://$authority$path"
+            val url = URL(adminUrl())
+            val authority = if (url.port == -1) url.host else "${url.host}:${url.port}"
+            "${url.protocol}://$authority$path"
         } catch (error: Exception) {
             "https://chinadelightct.com$path"
         }
     }
 
-    private fun authCookieHeader(): String? {
-        val nativeCookie = prefs().getString("adminCookie", "")?.trim().orEmpty()
-        if (nativeCookie.isNotBlank()) return nativeCookie
-        return CookieManager.getInstance().getCookie(adminUrl())?.takeIf { it.isNotBlank() }
+    private fun pickupText(order: JSONObject): String {
+        return if (order.optString("pickup_time_type") == "scheduled") {
+            "Scheduled ${formatTime(order.optString("scheduled_pickup_time"))}"
+        } else {
+            "ASAP"
+        }
     }
 
-    private fun shortTime(value: String): String {
+    private fun formatTime(value: String): String {
         if (value.isBlank() || value == "null") return ""
         return try {
-            val parser = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-            val date = parser.parse(value.substringBefore(".").removeSuffix("Z"))
-            if (date == null) value else SimpleDateFormat("MMM d h:mm a", Locale.US).format(date)
+            val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+            parser.timeZone = TimeZone.getTimeZone("UTC")
+            val parsed = parser.parse(value.substringBefore(".").removeSuffix("Z"))
+            if (parsed == null) value else SimpleDateFormat("MMM d h:mm a", Locale.US).format(parsed)
         } catch (error: Exception) {
             value
         }
     }
 
-    private fun updateButtonStates() {
-        val hasOrder = orderNumberInput.text.toString().trim().isNotBlank()
-        val hasPrinter = printerIpInput.text.toString().trim().isNotBlank()
-        setEnabled(fetchTicketButton, hasOrder)
-        setEnabled(printOrderButton, hasOrder && hasPrinter)
-        setEnabled(testPrintButton, hasPrinter)
-    }
-
-    private fun setEnabled(button: Button, enabled: Boolean) {
-        button.isEnabled = enabled
-        button.alpha = if (enabled) 1f else 0.5f
-    }
-
-    private fun setStatus(message: String) {
-        runOnUiThread { statusText.text = message }
-    }
-
-    private fun toast(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-    }
-
-    private fun editText(value: String, hint: String) = EditText(this).apply {
-        setText(value)
-        this.hint = hint
-        textSize = 16f
-        setSingleLine(true)
-    }
-
-    private fun button(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        textSize = 16f
-        minHeight = 120
-        setOnClickListener { onClick() }
-    }
-
-    private fun sectionLabel(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 13f
-        setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setTextColor(Color.parseColor("#B81D1D"))
-        setPadding(0, 28, 0, 8)
-    }
-
-    private fun matchParent() = FrameLayout.LayoutParams(
-        FrameLayout.LayoutParams.MATCH_PARENT,
-        FrameLayout.LayoutParams.MATCH_PARENT
-    )
-
-    private fun simpleWatcher(onChange: () -> Unit) = object : android.text.TextWatcher {
-        override fun afterTextChanged(s: android.text.Editable?) = onChange()
-        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+    private fun openExternal(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            setStatus("Opened admin in Chrome.")
+        } catch (error: Exception) {
+            setStatus("Open Admin in Chrome failed: ${error.message}")
+        }
     }
 
     private fun testTicketBytes(): ByteArray {
@@ -796,12 +385,51 @@ class MainActivity : Activity() {
         bytes(0x1b, 0x45, 0x00)
         line("------------------------------")
         bytes(0x1b, 0x61, 0x00)
-        line("If this printed, the tablet can")
-        line("reach the Epson printer over TCP.")
-        line()
+        line("Tablet can reach Epson printer.")
         line("Printer: ${printerHost()}:${printerPort()}")
         bytes(0x1b, 0x64, 0x04)
         bytes(0x1d, 0x56, 0x42, 0x00)
         return out.toByteArray()
+    }
+
+    private fun input(value: String, hintText: String) = EditText(this).apply {
+        setText(value)
+        hint = hintText
+        textSize = 18f
+        setSingleLine(true)
+        minHeight = 72
+    }
+
+    private fun button(label: String, onClick: () -> Unit) = Button(this).apply {
+        text = label
+        textSize = 18f
+        minHeight = 96
+        setOnClickListener { onClick() }
+    }
+
+    private fun section(label: String) = TextView(this).apply {
+        text = label
+        textSize = 15f
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setTextColor(Color.parseColor("#B81D1D"))
+        setPadding(0, 28, 0, 8)
+    }
+
+    private fun note(message: String) = TextView(this).apply {
+        text = message
+        textSize = 15f
+        setPadding(0, 8, 0, 8)
+    }
+
+    private fun setStatus(message: String) {
+        runOnUiThread { statusText.text = message }
+    }
+
+    private fun snippet(value: String): String {
+        return value.replace(Regex("\\s+"), " ").take(240)
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 }

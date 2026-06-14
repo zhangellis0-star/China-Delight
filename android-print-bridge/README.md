@@ -1,83 +1,72 @@
 # China Delight Android Print Bridge
 
-Small Android app for manual Epson kitchen printing from a restaurant tablet.
+Simple native Android app for manual Epson kitchen printing from the restaurant tablet.
 
-The current website printing route stays unchanged and remains the backup:
+The app does not depend on WebView for printing. It logs in through the existing admin login endpoint, loads recent active orders through the existing protected orders endpoint, fetches the existing ESC/POS ticket payload, and sends the decoded bytes to the Epson printer.
 
-- Website backup print route: `POST /api/admin/print-ticket`
-- Android payload route: `GET /api/admin/print-ticket/payload?orderNumber=ORDER_NUMBER`
-- Printer: Epson network receipt printer at `192.168.1.172:9100`
-- Transport from tablet to printer: raw TCP ESC/POS
+## Endpoints Used
 
-## Authentication
+- Admin login: `POST https://chinadelightct.com/api/admin/login`
+- Recent orders: `GET https://chinadelightct.com/api/orders?status=all`
+- Ticket payload: `GET https://chinadelightct.com/api/admin/print-ticket/payload?orderNumber=ORDER_NUMBER`
+- Admin fallback in Chrome: `https://chinadelightct.com/admin`
 
-The ticket payload endpoint is protected by the normal China Delight admin session.
+No Supabase keys, service role keys, JSON key files, or other secrets are stored in the app.
 
-This app includes an embedded WebView. Staff should tap **Open admin login**, log in to the admin screen inside the app, and then use **Fetch ticket** or **Print order**. The app reuses the admin session cookies stored by the WebView and sends them to:
+## Printer
 
-`https://chinadelightct.com/api/admin/print-ticket/payload?orderNumber=...`
-
-No admin password, Supabase key, service role key, printer secret, or other secret is stored in the app.
+- IP: `192.168.1.172`
+- Port: `9100`
+- Protocol: raw TCP ESC/POS
 
 ## Build APK
 
-Open this folder in Android Studio:
+From this folder:
 
-`android-print-bridge/`
+```bash
+./gradlew assembleDebug
+```
 
-Then:
+On Windows PowerShell:
 
-1. Let Android Studio sync Gradle.
-2. Choose **Build > Build Bundle(s) / APK(s) > Build APK(s)**.
-3. The debug APK will be created under:
+```powershell
+.\gradlew.bat assembleDebug
+```
+
+APK path:
 
 `app/build/outputs/apk/debug/app-debug.apk`
 
-Command-line build, if Android Studio/Gradle is installed:
-
-```bash
-gradle assembleDebug
-```
-
-This repository does not include an Android Gradle wrapper. Android Studio can create one later if desired.
-
 ## Install APK On Tablet
 
-1. Enable developer options on the Android tablet.
+1. Enable developer options on the Lenovo tablet.
 2. Enable USB debugging.
-3. Connect the tablet by USB.
-4. In Android Studio, press **Run**.
+3. Connect the tablet by USB and run from Android Studio, or copy/install the debug APK manually.
 
-Or copy `app-debug.apk` to the tablet and open it, allowing installation from that source when Android prompts.
-
-## Print A Test Ticket
-
-1. Connect the tablet to the same restaurant Wi-Fi/LAN as the Epson printer.
-2. Open the app.
-3. Confirm printer IP is `192.168.1.172`.
-4. Confirm printer port is `9100`.
-5. Tap **Print test ticket**.
-6. The app opens a raw TCP socket to the printer, writes a simple ESC/POS test ticket, and reports success or failure.
-
-## Print A Real Order
+## Restaurant Use
 
 1. Open the app.
-2. Tap **Open admin login**.
-3. Log in to the China Delight admin page inside the app.
-4. Enter an order number.
-5. Tap **Fetch ticket** to confirm the protected payload can be loaded.
-6. Tap **Print order**.
-7. The app decodes `escposBase64`, opens a TCP socket to the Epson printer, writes the bytes, and reports success only after the socket write completes.
+2. Confirm printer IP `192.168.1.172` and port `9100`.
+3. Tap **Test Print** to confirm tablet-to-printer connection.
+4. Enter the admin password.
+5. Tap **Log in**.
+6. Tap **Load recent active orders**.
+7. Tap **Print to Epson** on the order row.
 
-## Limitations
+Manual backup:
 
-- The tablet and printer must be on the same Wi-Fi/LAN.
-- Guest Wi-Fi or client isolation can block access to `192.168.1.172`.
-- Android battery optimization or sleep settings can interrupt staff workflow; the app requests the screen to stay awake while open.
-- A successful socket write means bytes were sent to the printer, but it cannot prove the paper physically printed.
-- If the printer IP changes, update the IP field in the app.
-- The app is for manual printing first. Auto-printing can be added later after the manual workflow is stable.
+1. Type/paste an order number.
+2. Tap **Fetch ticket**, then **Print order**.
+3. Or tap **Fetch & Print**.
 
-## Backup
+Fallback:
 
-Keep the Windows/server print route available during testing. If the tablet bridge fails, staff can still use the current website kitchen print path.
+- Tap **Open Admin in Chrome** to view or manage orders in the normal website admin screen.
+
+## Notes
+
+- Tablet and printer must be on the same Wi-Fi/LAN.
+- Guest Wi-Fi/client isolation can block access to `192.168.1.172`.
+- A successful socket write means bytes were sent to the Epson printer; it cannot prove paper physically printed.
+- If the printer IP changes, update the IP field and tap **Save settings**.
+- No polling or auto-printing is included yet.
