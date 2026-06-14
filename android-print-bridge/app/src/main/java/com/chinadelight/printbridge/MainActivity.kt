@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -37,6 +38,8 @@ import java.net.Socket
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 /**
  * China Delight Kitchen Printer bridge.
@@ -57,6 +60,7 @@ class MainActivity : Activity() {
         "Mozilla/5.0 (Linux; Android 13; Lenovo Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
     private lateinit var adminUrlInput: EditText
+    private lateinit var adminPasswordInput: EditText
     private lateinit var orderNumberInput: EditText
     private lateinit var printerIpInput: EditText
     private lateinit var printerPortInput: EditText
@@ -70,6 +74,7 @@ class MainActivity : Activity() {
     private lateinit var fetchTicketButton: Button
     private lateinit var printOrderButton: Button
     private lateinit var testPrintButton: Button
+    private lateinit var recentOrdersContainer: LinearLayout
 
     private var lastOrderNumber: String = ""
     private var lastTicketBytes: ByteArray? = null
@@ -82,11 +87,14 @@ class MainActivity : Activity() {
 
         val prefs = getSharedPreferences("bridge-settings", MODE_PRIVATE)
         adminUrlInput = editText(prefs.getString("adminUrl", defaultAdminUrl) ?: defaultAdminUrl, "Website/admin URL")
+        adminPasswordInput = editText("", "Admin password").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
         orderNumberInput = editText("", "Order number (e.g. CD-123456-ABC)")
         printerIpInput = editText(prefs.getString("printerIp", defaultPrinterIp) ?: defaultPrinterIp, "Printer IP")
         printerPortInput = editText(prefs.getString("printerPort", defaultPrinterPort) ?: defaultPrinterPort, "Printer port")
         statusText = TextView(this).apply {
-            text = "Ready. Open Admin and log in once so this app can reuse the session cookie."
+            text = "Ready. Native printing works without WebView: log in, load orders, then print."
             textSize = 16f
             setPadding(0, 16, 0, 16)
         }
@@ -128,12 +136,30 @@ class MainActivity : Activity() {
         })
 
         root.addView(sectionLabel("Main actions"))
-        root.addView(button("Open Admin (one-tap printing)") { openAdmin() })
+        root.addView(adminPasswordInput)
+        root.addView(button("Log in for native printing") { loginAdmin() })
+        root.addView(button("Load recent orders") { loadRecentOrders() })
+        root.addView(button("Open Admin in Chrome") {
+            saveSettings()
+            openExternal(adminUrl())
+        })
+        root.addView(button("Open Admin WebView (diagnostic)") { openAdmin() })
         testPrintButton = button("Test Print") {
             saveSettings()
             printBytes(testTicketBytes(), "Test ticket")
         }
         root.addView(testPrintButton)
+
+        root.addView(sectionLabel("Recent orders"))
+        recentOrdersContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        recentOrdersContainer.addView(TextView(this).apply {
+            text = "Tap Log in, then Load recent orders."
+            textSize = 14f
+            setPadding(0, 8, 0, 8)
+        })
+        root.addView(recentOrdersContainer)
 
         root.addView(sectionLabel("Manual print backup"))
         root.addView(orderNumberInput)
@@ -359,6 +385,120 @@ class MainActivity : Activity() {
         super.onBackPressed()
     }
 
+    // ---- Native recent-order printing (does not depend on WebView) --------
+
+    private fun loginAdmin() {
+        val password = adminPasswordInput.text.toString()
+        if (password.isBlank()) {
+            setStatus("Enter the admin password first.")
+            return
+        }
+        saveSettings()
+        setStatus("Logging in...")
+        Thread {
+            try {
+                val url = URL(apiUrl("/api/admin/login"))
+                val body = JSONObject().put("password", password).toString().toByteArray(StandardCharsets.UTF_8)
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = printerTimeoutMs
+                    readTimeout = printerTimeoutMs
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    outputStream.use { it.write(body) }
+                }
+                val status = connection.responseCode
+                val responseBody = readBody(if (status in 200..299) connection.inputStream else connection.errorStream)
+                if (status !in 200..299) throw IllegalStateException("Login returned $status: $responseBody")
+                val cookie = connection.headerFields["Set-Cookie"]?.firstOrNull()?.substringBefore(";") ?: ""
+                if (cookie.isBlank()) throw IllegalStateException("Login succeeded but no admin cookie was returned.")
+                prefs().edit().putString("adminCookie", cookie).apply()
+                CookieManager.getInstance().setCookie(adminUrl(), cookie)
+                CookieManager.getInstance().flush()
+                runOnUiThread {
+                    adminPasswordInput.text.clear()
+                    setStatus("Logged in. Tap Load recent orders.")
+                }
+            } catch (error: Exception) {
+                runOnUiThread { setStatus("Login failed: ${error.message}") }
+            }
+        }.start()
+    }
+
+    private fun loadRecentOrders() {
+        saveSettings()
+        setStatus("Loading recent orders...")
+        Thread {
+            try {
+                val url = URL(apiUrl("/api/orders?status=all"))
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = printerTimeoutMs
+                    readTimeout = printerTimeoutMs
+                    setRequestProperty("Accept", "application/json")
+                    authCookieHeader()?.let { setRequestProperty("Cookie", it) }
+                }
+                val status = connection.responseCode
+                val body = readBody(if (status in 200..299) connection.inputStream else connection.errorStream)
+                if (status == 401) throw IllegalStateException("Not logged in. Enter admin password and tap Log in first.")
+                if (status !in 200..299) throw IllegalStateException("Orders endpoint returned $status: $body")
+                val orders = JSONObject(body).getJSONArray("orders")
+                runOnUiThread {
+                    renderRecentOrders(orders)
+                    setStatus("Loaded ${orders.length()} recent orders.")
+                }
+            } catch (error: Exception) {
+                runOnUiThread { setStatus("Load orders failed: ${error.message}") }
+            }
+        }.start()
+    }
+
+    private fun renderRecentOrders(orders: org.json.JSONArray) {
+        recentOrdersContainer.removeAllViews()
+        val activeStatuses = setOf("new", "accepted", "preparing", "ready")
+        var shown = 0
+        for (index in 0 until orders.length()) {
+            val order = orders.getJSONObject(index)
+            val status = order.optString("status")
+            if (shown >= 30) break
+            if (status !in activeStatuses && shown >= 10) continue
+            shown += 1
+            recentOrdersContainer.addView(orderRow(order))
+        }
+        if (shown == 0) {
+            recentOrdersContainer.addView(TextView(this).apply {
+                text = "No recent orders returned."
+                textSize = 14f
+                setPadding(0, 8, 0, 8)
+            })
+        }
+    }
+
+    private fun orderRow(order: JSONObject): LinearLayout {
+        val orderNumber = order.optString("order_number")
+        val customer = order.optString("customer_name")
+        val phone = order.optString("customer_phone")
+        val status = order.optString("status")
+        val pickup = if (order.optString("pickup_time_type") == "scheduled") {
+            "Scheduled: ${shortTime(order.optString("scheduled_pickup_time"))}"
+        } else {
+            "ASAP"
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 12, 0, 12)
+            addView(TextView(this@MainActivity).apply {
+                text = "$orderNumber  |  $status  |  $pickup\n$customer  $phone"
+                textSize = 16f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(button("Print $orderNumber to Epson") {
+                orderNumberInput.setText(orderNumber)
+                fetchAndPrintOrder()
+            })
+        }
+    }
+
     // ---- One-tap print bridge (called from injected JS) -------------------
 
     inner class PrintBridge {
@@ -506,8 +646,7 @@ class MainActivity : Activity() {
             connectTimeout = printerTimeoutMs
             readTimeout = printerTimeoutMs
             setRequestProperty("Accept", "application/json")
-            val cookies = CookieManager.getInstance().getCookie(adminUrl())
-            if (!cookies.isNullOrBlank()) setRequestProperty("Cookie", cookies)
+            authCookieHeader()?.let { setRequestProperty("Cookie", it) }
         }
         val status = connection.responseCode
         val body = readBody(if (status in 200..299) connection.inputStream else connection.errorStream)
@@ -559,12 +698,33 @@ class MainActivity : Activity() {
 
     // Derive the payload endpoint from the admin URL origin so the cookie host always matches.
     private fun payloadUrl(): String {
+        return apiUrl("/api/admin/print-ticket/payload")
+    }
+
+    private fun apiUrl(path: String): String {
         return try {
             val u = URL(adminUrl())
             val authority = if (u.port == -1) u.host else "${u.host}:${u.port}"
-            "${u.protocol}://$authority/api/admin/print-ticket/payload"
+            "${u.protocol}://$authority$path"
         } catch (error: Exception) {
-            "https://chinadelightct.com/api/admin/print-ticket/payload"
+            "https://chinadelightct.com$path"
+        }
+    }
+
+    private fun authCookieHeader(): String? {
+        val nativeCookie = prefs().getString("adminCookie", "")?.trim().orEmpty()
+        if (nativeCookie.isNotBlank()) return nativeCookie
+        return CookieManager.getInstance().getCookie(adminUrl())?.takeIf { it.isNotBlank() }
+    }
+
+    private fun shortTime(value: String): String {
+        if (value.isBlank() || value == "null") return ""
+        return try {
+            val parser = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+            val date = parser.parse(value.substringBefore(".").removeSuffix("Z"))
+            if (date == null) value else SimpleDateFormat("MMM d h:mm a", Locale.US).format(date)
+        } catch (error: Exception) {
+            value
         }
     }
 
