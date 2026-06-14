@@ -34,6 +34,14 @@ The top bar includes test loads for:
 - `https://example.com/`
 - `https://www.chinadelightct.com/`
 - `https://www.chinadelightct.com/admin`
+- native internet check to `https://example.com/`
+
+The Android manifest includes:
+
+- `INTERNET`
+- `ACCESS_NETWORK_STATE`
+- explicit network security config
+- hardware acceleration
 
 ## Build APK
 

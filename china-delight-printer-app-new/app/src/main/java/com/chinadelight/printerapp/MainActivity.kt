@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.net.http.SslError
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -170,6 +171,7 @@ class MainActivity : Activity() {
         diagnosticsBar.addView(smallButton("Load Example") { loadUrl(exampleUrl) })
         diagnosticsBar.addView(smallButton("Load Site Home") { loadUrl(siteUrl) })
         diagnosticsBar.addView(smallButton("Load Admin") { loadUrl(adminUrl) })
+        diagnosticsBar.addView(smallButton("Check Internet") { checkInternet() })
         container.addView(diagnosticsBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         webStatus = TextView(this).apply {
@@ -198,6 +200,9 @@ class MainActivity : Activity() {
             settings.javaScriptEnabled = true
             settings.javaScriptCanOpenWindowsAutomatically = true
             settings.domStorageEnabled = true
+            settings.blockNetworkLoads = false
+            settings.allowContentAccess = true
+            settings.allowFileAccess = true
             @Suppress("DEPRECATION")
             settings.databaseEnabled = true
             settings.loadsImagesAutomatically = true
@@ -209,6 +214,9 @@ class MainActivity : Activity() {
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
             settings.setSupportMultipleWindows(false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                settings.safeBrowsingEnabled = false
+            }
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             addJavascriptInterface(PrintBridge(), "AndroidPrintBridge")
             setOnTouchListener { view, event ->
@@ -302,14 +310,31 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::webView.isInitialized) {
+            webView.onResume()
+            webView.resumeTimers()
+        }
+    }
+
+    override fun onPause() {
+        if (::webView.isInitialized) {
+            webView.onPause()
+        }
+        super.onPause()
+    }
+
     private fun openAdmin() {
         saveSettings()
         showAdmin()
+        setWebStatus("WebView provider: ${webViewProviderLabel()}")
         loadUrlAfterVisible(adminUrl)
     }
 
     private fun loadUrl(url: String) {
         showAdmin()
+        setWebStatus("WebView provider: ${webViewProviderLabel()}")
         loadUrlAfterVisible(url)
     }
 
@@ -349,6 +374,29 @@ class MainActivity : Activity() {
             webView.loadUrl("about:blank")
             setWebStatus("WebView data cleared. Tap Load Admin and log in again.")
         }
+    }
+
+    private fun checkInternet() {
+        setWebStatus("Checking native internet access to $exampleUrl ...")
+        Thread {
+            try {
+                val connection = (URL(exampleUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = timeoutMs
+                    readTimeout = timeoutMs
+                    setRequestProperty("User-Agent", mobileChromeUserAgent)
+                }
+                val status = connection.responseCode
+                val body = readBody(if (status in 200..299) connection.inputStream else connection.errorStream)
+                runOnUiThread {
+                    setWebStatus("Native internet OK. HTTP $status from $exampleUrl, ${body.length} chars. WebView provider: ${webViewProviderLabel()}")
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    setWebStatus("Native internet failed: ${error.javaClass.simpleName}: ${error.message}. WebView provider: ${webViewProviderLabel()}")
+                }
+            }
+        }.start()
     }
 
     private fun injectDiagnostics(view: WebView?) {
@@ -598,6 +646,15 @@ class MainActivity : Activity() {
             "${url.protocol}://$authority"
         } catch (error: Exception) {
             "https://chinadelightct.com"
+        }
+    }
+
+    private fun webViewProviderLabel(): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val provider = WebView.getCurrentWebViewPackage()
+            if (provider == null) "none" else "${provider.packageName} ${provider.versionName}"
+        } else {
+            "unknown on Android ${Build.VERSION.RELEASE}"
         }
     }
 
