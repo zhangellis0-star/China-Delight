@@ -129,28 +129,30 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.WHITE)
         }
 
+        // Slim top bar: tiny controls + inline status in one thin row, so the WebView gets
+        // almost the whole screen for orders. (Print buttons are injected automatically.)
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(16, 8, 16, 8)
+            setPadding(8, 2, 8, 2)
             setBackgroundColor(Color.parseColor("#FFF7E8"))
         }
-        topBar.addView(button("← Home") { showHomeScreen() })
-        topBar.addView(button("Reload") { reloadAdmin() })
-        topBar.addView(button("Re-scan") {
+        topBar.addView(smallButton("‹ Home") { showHomeScreen() })
+        topBar.addView(smallButton("Reload") { reloadAdmin() })
+        topBar.addView(smallButton("Rescan") {
             webView.evaluateJavascript(injectionJs(), null)
             setWebStatus("Re-added Print to Epson buttons.")
         })
-        container.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
         webStatus = TextView(this).apply {
             text = ""
-            textSize = 12f
-            setPadding(16, 6, 16, 6)
+            textSize = 11f
+            setPadding(12, 0, 8, 0)
+            setSingleLine(true)
+            ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(Color.parseColor("#7a3d00"))
-            setBackgroundColor(Color.parseColor("#FFF7CC"))
         }
-        container.addView(webStatus, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        topBar.addView(webStatus, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        container.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         // WebView fills the rest of the screen and scrolls natively.
         container.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -435,6 +437,19 @@ class MainActivity : Activity() {
         text = label
         textSize = 16f
         minHeight = 120
+        setOnClickListener { onClick() }
+    }
+
+    // Compact button for the slim admin top bar (small text, minimal padding).
+    private fun smallButton(label: String, onClick: () -> Unit) = Button(this).apply {
+        text = label
+        textSize = 12f
+        isAllCaps = false
+        minWidth = 0
+        minHeight = 0
+        minimumWidth = 0
+        minimumHeight = 0
+        setPadding(22, 10, 22, 10)
         setOnClickListener { onClick() }
     }
 
