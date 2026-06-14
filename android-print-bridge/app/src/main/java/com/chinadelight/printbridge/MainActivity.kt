@@ -7,8 +7,16 @@ import android.util.Base64
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.graphics.Bitmap
+import android.net.http.SslError
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.SslErrorHandler
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -52,6 +60,7 @@ class MainActivity : Activity() {
     private lateinit var controlsScreen: ScrollView
     private lateinit var adminScreen: LinearLayout
     private lateinit var webView: WebView
+    private lateinit var webStatus: TextView
 
     private lateinit var fetchTicketButton: Button
     private lateinit var printOrderButton: Button
@@ -114,12 +123,7 @@ class MainActivity : Activity() {
         })
 
         root.addView(sectionLabel("Main actions"))
-        root.addView(button("Open Admin (one-tap printing)") {
-            saveSettings()
-            showAdminScreen()
-            webView.loadUrl(adminUrl())
-            setStatus("Admin opened. Log in if needed, then tap \"Print to Epson\" on an order.")
-        })
+        root.addView(button("Open Admin (one-tap printing)") { openAdmin() })
         testPrintButton = button("Test Print") {
             saveSettings()
             printBytes(testTicketBytes(), "Test ticket")
@@ -158,15 +162,22 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.parseColor("#FFF7E8"))
         }
         topBar.addView(button("← Back") { showControlsScreen() })
+        topBar.addView(button("Reload") { reloadAdmin() })
         topBar.addView(button("Re-scan orders") {
             webView.evaluateJavascript(injectionJs(), null)
             setStatus("Re-added print buttons to visible orders.")
         })
-        topBar.addView(TextView(this).apply {
-            text = "  Tap \"Print to Epson\" on an order"
-            textSize = 13f
-        })
         container.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+        // Visible load/error status line so the WebView never just shows blank white.
+        webStatus = TextView(this).apply {
+            text = ""
+            textSize = 12f
+            setPadding(16, 6, 16, 6)
+            setTextColor(Color.parseColor("#7a3d00"))
+            setBackgroundColor(Color.parseColor("#FFF7CC"))
+        }
+        container.addView(webStatus, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         // WebView fills the rest of the screen (weight = 1) and scrolls natively.
         container.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -175,19 +186,94 @@ class MainActivity : Activity() {
 
     private fun buildWebView() {
         webView = WebView(this).apply {
+            setBackgroundColor(Color.WHITE)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            settings.databaseEnabled = true
+            settings.loadsImagesAutomatically = true
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
             isNestedScrollingEnabled = true
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             addJavascriptInterface(PrintBridge(), "AndroidPrintBridge")
+
+            webChromeClient = object : WebChromeClient() {
+                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    if (newProgress in 1..99) setWebStatus("Loading ${view?.url ?: adminUrl()} - $newProgress%")
+                }
+            }
+
             webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    setWebStatus("Loading ${url ?: ""} ...")
+                }
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    if (url != null && url != "about:blank" && !url.startsWith("data:")) {
+                        setWebStatus("Loaded $url")
+                    }
                     view?.evaluateJavascript(injectionJs(), null)
+                }
+                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                    if (request?.isForMainFrame == true) {
+                        val desc = error?.description?.toString() ?: "Load failed"
+                        val code = error?.errorCode
+                        setWebStatus("Error${if (code != null) " $code" else ""}: $desc - ${request.url}")
+                        showWebError(view, request.url.toString(), desc, code)
+                    }
+                }
+                @Suppress("DEPRECATION")
+                override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
+                    setWebStatus("Error $errorCode: ${description ?: ""} - ${failingUrl ?: ""}")
+                    showWebError(view, failingUrl ?: "", description ?: "Load failed", errorCode)
+                }
+                override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
+                    if (request?.isForMainFrame == true) {
+                        setWebStatus("HTTP ${errorResponse?.statusCode} ${errorResponse?.reasonPhrase ?: ""} - ${request.url}")
+                    }
+                }
+                override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                    setWebStatus("SSL error (${error?.primaryError}) - ${error?.url}. Page not loaded for safety.")
+                    handler?.cancel()
                 }
             }
         }
+    }
+
+    private fun openAdmin() {
+        saveSettings()
+        showAdminScreen()
+        val url = adminUrl()
+        setWebStatus("Loading $url ...")
+        setStatus("Admin opened. Log in if needed, then tap \"Print to Epson\" on an order.")
+        // Load after the view is visible + laid out so the WebView surface renders (avoids blank white).
+        webView.post { webView.loadUrl(url) }
+    }
+
+    private fun reloadAdmin() {
+        val url = adminUrl()
+        setWebStatus("Loading $url ...")
+        webView.loadUrl(url)
+    }
+
+    private fun setWebStatus(message: String) {
+        runOnUiThread { if (::webStatus.isInitialized) webStatus.text = message }
+    }
+
+    private fun showWebError(view: WebView?, url: String, description: String, code: Int?) {
+        val html = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head>" +
+            "<body style='font-family:sans-serif;padding:24px;color:#222'>" +
+            "<h2 style='color:#b81d1d'>Could not load the admin page</h2>" +
+            "<p><b>URL:</b> ${escapeHtml(url)}</p>" +
+            "<p><b>Error:</b> ${escapeHtml(description)}${if (code != null) " (code $code)" else ""}</p>" +
+            "<p>Check the tablet Wi-Fi / internet connection, then tap RELOAD in the top bar.</p>" +
+            "</body></html>"
+        view?.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+    }
+
+    private fun escapeHtml(value: String): String {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     }
 
     private fun showAdminScreen() {
