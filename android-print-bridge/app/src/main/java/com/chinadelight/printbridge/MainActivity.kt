@@ -1,7 +1,9 @@
 package com.chinadelight.printbridge
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
 import android.view.Gravity
@@ -10,6 +12,7 @@ import android.view.WindowManager
 import android.graphics.Bitmap
 import android.net.http.SslError
 import android.webkit.CookieManager
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -50,6 +53,8 @@ class MainActivity : Activity() {
     private val defaultPrinterIp = "192.168.1.172"
     private val defaultPrinterPort = "9100"
     private val printerTimeoutMs = 5000
+    private val mobileChromeUserAgent =
+        "Mozilla/5.0 (Linux; Android 13; Lenovo Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
     private lateinit var adminUrlInput: EditText
     private lateinit var orderNumberInput: EditText
@@ -163,11 +168,23 @@ class MainActivity : Activity() {
         }
         topBar.addView(button("← Back") { showControlsScreen() })
         topBar.addView(button("Reload") { reloadAdmin() })
+        topBar.addView(button("Clear Cache") { clearWebViewData() })
+        topBar.addView(button("Open Chrome") { openExternal(adminUrl()) })
         topBar.addView(button("Re-scan orders") {
             webView.evaluateJavascript(injectionJs(), null)
             setStatus("Re-added print buttons to visible orders.")
         })
         container.addView(topBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+        val diagnosticBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(16, 4, 16, 4)
+            setBackgroundColor(Color.WHITE)
+        }
+        diagnosticBar.addView(button("Load site") { loadUrl("https://chinadelightct.com/") })
+        diagnosticBar.addView(button("Load example") { loadUrl("https://example.com/") })
+        container.addView(diagnosticBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         // Visible load/error status line so the WebView never just shows blank white.
         webStatus = TextView(this).apply {
@@ -185,14 +202,24 @@ class MainActivity : Activity() {
     }
 
     private fun buildWebView() {
+        WebView.setWebContentsDebuggingEnabled(true)
         webView = WebView(this).apply {
             setBackgroundColor(Color.WHITE)
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             settings.javaScriptEnabled = true
+            settings.javaScriptCanOpenWindowsAutomatically = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
             settings.loadsImagesAutomatically = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            settings.cacheMode = WebSettings.LOAD_NO_CACHE
+            settings.userAgentString = mobileChromeUserAgent
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = false
+            settings.builtInZoomControls = false
+            settings.displayZoomControls = false
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.setSupportMultipleWindows(false)
             isNestedScrollingEnabled = true
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
@@ -201,6 +228,13 @@ class MainActivity : Activity() {
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
                     if (newProgress in 1..99) setWebStatus("Loading ${view?.url ?: adminUrl()} - $newProgress%")
+                    if (newProgress == 100) setWebStatus("Loaded ${view?.url ?: adminUrl()} - 100%")
+                }
+
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                    consoleMessage ?: return false
+                    setWebStatus("Console ${consoleMessage.messageLevel()}: ${consoleMessage.message()}")
+                    return false
                 }
             }
 
@@ -214,6 +248,9 @@ class MainActivity : Activity() {
                         setWebStatus("Loaded $url")
                     }
                     view?.evaluateJavascript(injectionJs(), null)
+                }
+                override fun onPageCommitVisible(view: WebView?, url: String?) {
+                    setWebStatus("Page visible: ${url ?: ""}")
                 }
                 override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                     if (request?.isForMainFrame == true) {
@@ -248,13 +285,40 @@ class MainActivity : Activity() {
         setWebStatus("Loading $url ...")
         setStatus("Admin opened. Log in if needed, then tap \"Print to Epson\" on an order.")
         // Load after the view is visible + laid out so the WebView surface renders (avoids blank white).
-        webView.post { webView.loadUrl(url) }
+        webView.postDelayed({ webView.loadUrl(url) }, 250)
     }
 
     private fun reloadAdmin() {
-        val url = adminUrl()
+        loadUrl(adminUrl())
+    }
+
+    private fun loadUrl(url: String) {
+        showAdminScreen()
         setWebStatus("Loading $url ...")
-        webView.loadUrl(url)
+        webView.postDelayed({ webView.loadUrl(url) }, 150)
+    }
+
+    private fun clearWebViewData() {
+        setWebStatus("Clearing WebView cache and cookies...")
+        webView.stopLoading()
+        webView.clearCache(true)
+        webView.clearHistory()
+        webView.clearFormData()
+        CookieManager.getInstance().removeAllCookies {
+            CookieManager.getInstance().flush()
+            setWebStatus("WebView cache/cookies cleared. Tap Open Admin and log in again.")
+            setStatus("WebView cache cleared. Open Admin and log in again.")
+            webView.loadUrl("about:blank")
+        }
+    }
+
+    private fun openExternal(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            setStatus("Opened $url in Chrome/browser.")
+        } catch (error: Exception) {
+            setStatus("Could not open Chrome/browser: ${error.message}")
+        }
     }
 
     private fun setWebStatus(message: String) {
