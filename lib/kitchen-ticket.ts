@@ -1,11 +1,21 @@
+import { menuItems } from "@/data/menu";
 import { cmd, feed, lineWidth, moneyLine, text, wrapLine } from "@/lib/escpos";
-import { customizationParts } from "@/lib/order-display";
 import { formatPickupDateTime } from "@/lib/order-rules";
 import { restaurant } from "@/lib/restaurant";
 
 // Tax/processing-fee percentages shown on the ticket, e.g. "7.35" and "6" (matches AirPrint).
 const taxPercent = Number((restaurant.taxRate * 100).toFixed(2));
 const processingFeePercent = Number((restaurant.processingFeeRate * 100).toFixed(2));
+
+// Menu lookup so the ticket can hide a spice level the customer never changed. The customer order
+// form defaults spice to "Hot" for spicy menu items and "None" for everything else
+// (see components/menu/menu-item-card.tsx); a stored value equal to that default was not customized.
+const menuById = new Map(menuItems.map((item) => [item.id, item]));
+
+function defaultSpiceLevel(menuItemId?: string | null): string {
+  const menuItem = menuItemId ? menuById.get(menuItemId) : undefined;
+  return menuItem?.spicy ? "Hot" : "None";
+}
 
 export type PrintOrder = {
   order_number: string;
@@ -25,6 +35,7 @@ export type PrintOrder = {
   discount_amount?: number | null;
   total: number;
   order_items: Array<{
+    menu_item_id?: string | null;
     item_number?: string | null;
     item_name: string;
     quantity: number;
@@ -32,6 +43,53 @@ export type PrintOrder = {
     customization?: Record<string, unknown> | null;
   }>;
 };
+
+type OrderItem = PrintOrder["order_items"][number];
+
+// Split an item's customization into "info" (size / combo includes / lunch picks — printed plainly)
+// and "custom" (anything the customer changed — printed in a very obvious CUSTOMER CHANGED block).
+// Default spice that was never changed is omitted entirely.
+function classifyItem(item: OrderItem): { customLines: string[]; infoLines: string[]; notes: string; freeOffer: boolean } {
+  const c = (item.customization ?? {}) as Record<string, unknown>;
+  const customLines: string[] = [];
+  const infoLines: string[] = [];
+
+  const freeOffer = Boolean(c.specialOffer);
+
+  const size = typeof c.size === "string" ? c.size : "";
+  if (size && size.trim().toLowerCase() !== "order") infoLines.push(`Size: ${size}`);
+
+  const included = Array.isArray(c.includedItems) ? c.includedItems : [];
+  if (included.length) infoLines.push(`Includes: ${included.join(", ")}`);
+
+  if (typeof c.lunchRice === "string" && c.lunchRice) infoLines.push(`Lunch rice: ${c.lunchRice}`);
+  if (typeof c.lunchSide === "string" && c.lunchSide) infoLines.push(`Lunch side: ${c.lunchSide}`);
+
+  if (typeof c.rice === "string" && c.rice) customLines.push(`Rice: ${c.rice}`);
+
+  // Spice: only when the customer changed it from the menu item's default.
+  if (typeof c.spiceLevel === "string" && c.spiceLevel.trim()) {
+    const chosen = c.spiceLevel.trim();
+    if (chosen.toLowerCase() !== defaultSpiceLevel(item.menu_item_id).toLowerCase()) {
+      customLines.push(`Spice: ${chosen}`);
+    }
+  }
+
+  if (c.sauceOnSide) customLines.push("Sauce on side");
+  if (c.noOnion) customLines.push("No onion");
+  if (c.noBroccoli) customLines.push("No broccoli");
+
+  const addOns = Array.isArray(c.addOns) ? c.addOns : [];
+  if (addOns.length) customLines.push(`Add-ons: ${addOns.join(", ")}`);
+
+  const extraAmount = Number((c as { extraChargeAmount?: unknown }).extraChargeAmount ?? 0);
+  const extraLabel = typeof c.extraChargeLabel === "string" ? c.extraChargeLabel : "";
+  if (extraLabel || extraAmount > 0) customLines.push(`${extraLabel || "Extra charge"} (+$${extraAmount.toFixed(2)})`);
+
+  const notes = typeof c.notes === "string" ? c.notes.trim() : "";
+
+  return { customLines, infoLines, notes, freeOffer };
+}
 
 function pickupText(order: PrintOrder) {
   return isScheduled(order) ? formatPickupDateTime(order.scheduled_pickup_time) : "ASAP";
@@ -43,13 +101,6 @@ function isScheduled(order: PrintOrder) {
 
 function isTestOrder(order: PrintOrder) {
   return order.order_number.toUpperCase().startsWith("TEST");
-}
-
-// Customization lines for one item. Reuses the shared customizationParts logic but drops the
-// default "Size: order" (a plain a-la-carte order with no real size choice) so unmodified items
-// don't print a noisy, meaningless modifiers section.
-function ticketModifiers(customization?: Record<string, unknown> | null) {
-  return customizationParts(customization ?? {}).filter((part) => part.trim().toLowerCase() !== "size: order");
 }
 
 // Kitchen / pickup ticket for 80mm thermal paper. Mirrors the AirPrint ticket
@@ -122,20 +173,37 @@ export function escposTicket(order: PrintOrder) {
   }
   line(doubleDivider);
 
-  // Items: each name printed large and bold, line price right-aligned, modifiers/notes when present.
+  // Items: name big + bold, line price, plain info lines (size/combo/lunch), and a very obvious
+  // "CUSTOMER CHANGED" block for anything the customer customized (incl. special instructions).
+  // A default spice level the customer never changed is not printed at all.
   for (const item of order.order_items ?? []) {
     const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${item.item_name}`;
     chunks.push(cmd.boldOn, cmd.sizeTall);
     wrapped(itemTitle.toUpperCase());
     chunks.push(cmd.sizeNormal, cmd.boldOff);
     line(moneyLine("", Number(item.unit_price || 0) * Number(item.quantity || 0)));
-    for (const part of ticketModifiers(item.customization)) {
-      wrapped(`- ${part.toUpperCase()}`, 3);
-    }
-    const notes = item.customization?.notes;
-    if (notes) {
+
+    const { customLines, infoLines, notes, freeOffer } = classifyItem(item);
+
+    if (freeOffer) {
       chunks.push(cmd.boldOn);
-      wrapped(`* SPECIAL INSTRUCTIONS: ${String(notes).toUpperCase()}`, 3);
+      line("** FREE (SPECIAL OFFER) **");
+      chunks.push(cmd.boldOff);
+    }
+
+    for (const info of infoLines) {
+      wrapped(`- ${info}`, 3);
+    }
+
+    if (customLines.length > 0 || notes) {
+      chunks.push(cmd.boldOn);
+      line("*** CUSTOMER CHANGED ***");
+      for (const change of customLines) {
+        wrapped(`CUSTOM: ${change.toUpperCase()}`);
+      }
+      if (notes) {
+        wrapped(`CUSTOM NOTE: ${notes.toUpperCase()}`);
+      }
       chunks.push(cmd.boldOff);
     }
     line(divider);
