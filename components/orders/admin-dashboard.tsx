@@ -143,13 +143,23 @@ const statuses: OrderStatus[] = ["new", "accepted", "preparing", "ready", "picke
 const adminSections: Array<{ value: AdminSection; label: string }> = [
   { value: "orders", label: "Orders" },
   { value: "past-orders", label: "Past Orders" },
-  { value: "summary", label: "Daily Summary" },
-  { value: "reports", label: "Reports / Export" },
-  { value: "promo", label: "Promo Codes" },
-  { value: "special-offers", label: "Special Offers" },
   { value: "sold-out", label: "Sold Out Items" },
   { value: "ordering", label: "Online Ordering Status" },
   { value: "settings", label: "Settings Info" }
+];
+const promotionsSections: Array<{ value: AdminSection; label: string }> = [
+  { value: "promo", label: "Promo Codes" },
+  { value: "special-offers", label: "Special Offers" }
+];
+const reportsSections: Array<{ value: AdminSection; label: string }> = [
+  { value: "summary", label: "Daily Summary" },
+  { value: "reports", label: "Reports & Exports" }
+];
+const adminSectionGroups: Array<{ heading: string; sections: Array<{ value: AdminSection; label: string }> }> = [
+  { heading: "Orders", sections: adminSections.slice(0, 2) },
+  { heading: "Promotions", sections: promotionsSections },
+  { heading: "Reports & Exports", sections: reportsSections },
+  { heading: "Operations", sections: adminSections.slice(2) }
 ];
 const activeStatuses: OrderStatus[] = ["new", "accepted", "preparing", "ready"];
 const pastStatuses: OrderStatus[] = ["picked_up", "completed", "cancelled"];
@@ -1113,7 +1123,7 @@ export function AdminDashboard() {
     orders: "Orders",
     "past-orders": "Past Orders",
     summary: "Daily Summary",
-    reports: "Reports / Export",
+    reports: "Reports & Exports",
     promo: "Promo Codes",
     "special-offers": "Special Offers",
     "sold-out": "Sold Out Items",
@@ -1245,17 +1255,22 @@ export function AdminDashboard() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="grid gap-1">
-              {adminSections.map((section) => (
-                <button
-                  key={`${section.label}-${section.value}`}
-                  onClick={() => openAdminSection(section.value)}
-                  className={`focus-ring min-h-11 rounded-md px-3 text-left text-sm font-black ${
-                    activeSection === section.value ? "bg-china-red text-white shadow-sm" : "text-stone-800 hover:bg-white"
-                  }`}
-                >
-                  {section.label}
-                </button>
+            <div className="grid gap-3">
+              {adminSectionGroups.map((group) => (
+                <div key={group.heading} className="grid gap-1">
+                  <p className="px-2 pt-2 text-[11px] font-black uppercase tracking-[0.14em] text-china-red">{group.heading}</p>
+                  {group.sections.map((section) => (
+                    <button
+                      key={`${section.label}-${section.value}`}
+                      onClick={() => openAdminSection(section.value)}
+                      className={`focus-ring min-h-11 rounded-md px-3 text-left text-sm font-black ${
+                        activeSection === section.value ? "bg-china-red text-white shadow-sm" : "text-stone-800 hover:bg-white"
+                      }`}
+                    >
+                      {section.label}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           </aside>
