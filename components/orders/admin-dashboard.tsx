@@ -1412,15 +1412,9 @@ export function AdminDashboard() {
             <button onClick={exportTodayCsv} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
               Export today CSV
             </button>
-            <button
-              onClick={() => {
-                setReportsPanelOpen((open) => !open);
-                if (!reportsPanelOpen) void loadDailyReportHistory(reportDate || easternDateKey());
-              }}
-              className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800"
-            >
-              {reportsPanelOpen ? "Hide history" : "View reports history"}
-            </button>
+            <Link href="/admin/reports" className="focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+              View reports history
+            </Link>
           </div>
           <p className="text-xs font-bold text-stone-600">The daily report also prints automatically at 10:00 PM. Test orders are clearly marked TEST and excluded from report totals.</p>
           {toolMessage && <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{toolMessage}</p>}
