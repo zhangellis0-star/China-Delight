@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/components/cart/cart-provider";
+import { AdminAwareFooter } from "@/components/admin-aware-footer";
 import { SiteHeader } from "@/components/site-header";
-import { SiteFooter } from "@/components/site-footer";
 import { restaurant } from "@/lib/restaurant";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <CartProvider>
           <SiteHeader />
           <main>{children}</main>
-          <SiteFooter />
+          <AdminAwareFooter />
         </CartProvider>
       </body>
     </html>
