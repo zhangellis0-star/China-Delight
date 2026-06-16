@@ -1382,6 +1382,22 @@ export function AdminDashboard() {
               <p className="text-sm font-bold text-stone-600">Daily summary, report history, printing, and CSV export tools in one place.</p>
             </div>
           </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <button onClick={createTestOrder} disabled={creatingTestOrder} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
+              {creatingTestOrder ? "Creating test order..." : "Create test order"}
+            </button>
+            <button onClick={() => printDailyReport()} disabled={dailyReportBusy} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
+              {dailyReportBusy ? "Printing report..." : "Print daily report"}
+            </button>
+            <button onClick={exportTodayCsv} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+              Export today CSV
+            </button>
+            <Link href="/admin/reports" className="focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+              View reports history
+            </Link>
+          </div>
+          <p className="mt-3 text-xs font-bold text-stone-600">The daily report also prints automatically at 10:00 PM. Test orders are clearly marked TEST and excluded from report totals.</p>
+          {toolMessage && <p className="mt-3 rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{toolMessage}</p>}
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {[
               ["Orders today", dailySummary.totalOrders],
@@ -1402,22 +1418,6 @@ export function AdminDashboard() {
             ))}
           </div>
           <div className="mt-5 grid gap-4 border-t border-china-gold/40 pt-4">
-          <div className="flex flex-wrap gap-2">
-            <button onClick={createTestOrder} disabled={creatingTestOrder} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
-              {creatingTestOrder ? "Creating test order..." : "Create test order"}
-            </button>
-            <button onClick={() => printDailyReport()} disabled={dailyReportBusy} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
-              {dailyReportBusy ? "Printing report..." : "Print daily report"}
-            </button>
-            <button onClick={exportTodayCsv} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
-              Export today CSV
-            </button>
-            <Link href="/admin/reports" className="focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
-              View reports history
-            </Link>
-          </div>
-          <p className="text-xs font-bold text-stone-600">The daily report also prints automatically at 10:00 PM. Test orders are clearly marked TEST and excluded from report totals.</p>
-          {toolMessage && <p className="rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{toolMessage}</p>}
           <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
             <p className="font-black text-china-red">Today&apos;s top items</p>
             <div className="mt-3 grid gap-2 text-sm">
