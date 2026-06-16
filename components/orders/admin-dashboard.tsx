@@ -69,7 +69,7 @@ type AdminOperations = {
   busyExtraMinutes: number;
   nextBoundary: { label: string; iso: string };
 };
-type AdminSection = "orders" | "past-orders" | "summary" | "sold-out" | "ordering" | "reports" | "promo" | "special-offers" | "settings";
+type AdminSection = "orders" | "past-orders" | "sold-out" | "ordering" | "reports" | "promotions" | "settings";
 type KitchenPrintState = {
   status: "printed" | "failed";
   message?: string;
@@ -148,17 +148,12 @@ const adminSections: Array<{ value: AdminSection; label: string }> = [
   { value: "settings", label: "Settings Info" }
 ];
 const promotionsSections: Array<{ value: AdminSection; label: string }> = [
-  { value: "promo", label: "Promo Codes" },
-  { value: "special-offers", label: "Special Offers" }
-];
-const reportsSections: Array<{ value: AdminSection; label: string }> = [
-  { value: "summary", label: "Daily Summary" },
-  { value: "reports", label: "Reports & Exports" }
+  { value: "promotions", label: "Promotions" }
 ];
 const adminSectionGroups: Array<{ heading: string; sections: Array<{ value: AdminSection; label: string }> }> = [
   { heading: "Orders", sections: adminSections.slice(0, 2) },
   { heading: "Promotions", sections: promotionsSections },
-  { heading: "Reports & Exports", sections: reportsSections },
+  { heading: "Reports & Exports", sections: [{ value: "reports", label: "Reports & Exports" }] },
   { heading: "Operations", sections: adminSections.slice(2) }
 ];
 const activeStatuses: OrderStatus[] = ["new", "accepted", "preparing", "ready"];
@@ -1122,10 +1117,8 @@ export function AdminDashboard() {
   const sectionTitles: Record<AdminSection, string> = {
     orders: "Orders",
     "past-orders": "Past Orders",
-    summary: "Daily Summary",
     reports: "Reports & Exports",
-    promo: "Promo Codes",
-    "special-offers": "Special Offers",
+    promotions: "Promotions",
     "sold-out": "Sold Out Items",
     ordering: "Online Ordering Status",
     settings: "Settings Info"
@@ -1382,7 +1375,33 @@ export function AdminDashboard() {
       )}
 
       {activeSection === "reports" && (
-        <div className="grid gap-4">
+        <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-black text-china-red">Reports & Exports</p>
+              <p className="text-sm font-bold text-stone-600">Daily summary, report history, printing, and CSV export tools in one place.</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              ["Orders today", dailySummary.totalOrders],
+              ["New", dailySummary.newOrders],
+              ["Active", dailySummary.activeOrders],
+              ["Picked up / completed", dailySummary.pickedUpCompleted],
+              ["Cancelled", dailySummary.cancelled],
+              ["Sales", formatPrice(dailySummary.totalSales)],
+              ["Cash", formatPrice(dailySummary.cashSales)],
+              ["Stripe paid", formatPrice(dailySummary.stripeSales)],
+              ["Tips", formatPrice(dailySummary.tips)],
+              ["Avg order", formatPrice(dailySummary.averageOrder)]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border border-china-gold/40 bg-white p-3">
+                <p className="text-xs font-black uppercase tracking-[0.12em] text-china-red">{label}</p>
+                <p className="mt-1 text-xl font-black text-stone-900">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 grid gap-4 border-t border-china-gold/40 pt-4">
           <div className="flex flex-wrap gap-2">
             <button onClick={createTestOrder} disabled={creatingTestOrder} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
               {creatingTestOrder ? "Creating test order..." : "Create test order"}
@@ -1529,6 +1548,7 @@ export function AdminDashboard() {
               )}
             </div>
           )}
+          </div>
         </div>
       )}
 
@@ -1548,29 +1568,16 @@ export function AdminDashboard() {
         </div>
       )}
 
-      {activeSection === "promo" && <PromoManager />}
-
-      {activeSection === "special-offers" && <SpecialOffersManager />}
-
-      {activeSection === "summary" && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            ["Orders today", dailySummary.totalOrders],
-            ["New", dailySummary.newOrders],
-            ["Active", dailySummary.activeOrders],
-            ["Picked up / completed", dailySummary.pickedUpCompleted],
-            ["Cancelled", dailySummary.cancelled],
-            ["Sales", formatPrice(dailySummary.totalSales)],
-            ["Cash", formatPrice(dailySummary.cashSales)],
-            ["Stripe paid", formatPrice(dailySummary.stripeSales)],
-            ["Tips", formatPrice(dailySummary.tips)],
-            ["Avg order", formatPrice(dailySummary.averageOrder)]
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-[0.12em] text-china-red">{label}</p>
-              <p className="mt-1 text-xl font-black text-stone-900">{value}</p>
-            </div>
-          ))}
+      {activeSection === "promotions" && (
+        <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
+          <div>
+            <p className="font-black text-china-red">Promotions</p>
+            <p className="text-sm font-bold text-stone-600">Manage promo codes and customer special offers together.</p>
+          </div>
+          <div className="mt-4 grid gap-4">
+            <PromoManager embedded />
+            <SpecialOffersManager embedded />
+          </div>
         </div>
       )}
 

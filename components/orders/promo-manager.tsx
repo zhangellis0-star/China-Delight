@@ -52,7 +52,7 @@ function isExpired(promo: PromoCode) {
   return Boolean(promo.expires_at && new Date(promo.expires_at).getTime() < Date.now());
 }
 
-export function PromoManager() {
+export function PromoManager({ embedded = false }: { embedded?: boolean }) {
   const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -185,7 +185,7 @@ export function PromoManager() {
   const activeCount = promoCodes.filter((promo) => promo.active).length;
 
   return (
-    <div id="admin-promo" className="mobile-safe mt-5 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:mt-6 sm:p-4">
+    <div id="admin-promo" className={embedded ? "scroll-mt-24 rounded-md border border-china-gold/40 bg-white p-3" : "mobile-safe mt-5 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:mt-6 sm:p-4"}>
       {!panelOpen ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

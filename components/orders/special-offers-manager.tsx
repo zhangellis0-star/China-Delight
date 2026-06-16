@@ -79,7 +79,7 @@ function ItemPicker({ label, value, onChange, options, placeholder }: { label: s
   );
 }
 
-export function SpecialOffersManager() {
+export function SpecialOffersManager({ embedded = false }: { embedded?: boolean }) {
   const [offers, setOffers] = useState<SpecialOffer[]>([]);
   const [menuOptions, setMenuOptions] = useState<MenuOption[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -245,7 +245,7 @@ export function SpecialOffersManager() {
   const activeCount = offers.filter((offer) => offer.active).length;
 
   return (
-    <div id="admin-special-offers" className="mobile-safe mt-5 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:mt-6 sm:p-4">
+    <div id="admin-special-offers" className={embedded ? "scroll-mt-24 rounded-md border border-china-gold/40 bg-white p-3" : "mobile-safe mt-5 scroll-mt-24 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:mt-6 sm:p-4"}>
       {!panelOpen ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
