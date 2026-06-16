@@ -160,6 +160,8 @@ const activeStatuses: OrderStatus[] = ["new", "accepted", "preparing", "ready"];
 const pastStatuses: OrderStatus[] = ["picked_up", "completed", "cancelled"];
 const acceptReadyMinuteOptions = [5, 15, 25];
 const kitchenPrintStorageKey = "china-delight-kitchen-print-statuses";
+const adminSectionStorageKey = "china-delight-admin-section";
+const adminSectionValues: AdminSection[] = ["orders", "past-orders", "sold-out", "ordering", "reports", "promotions", "settings"];
 const spiceLevels = ["None", "Mild", "Medium", "Hot", "Extra Hot"] as const;
 const sizeLabels: Record<MenuPriceKey, string> = { pint: "Pint", quart: "Quart", combo: "Combo", order: "Order", large: "Large", small: "Small" };
 const lunchRiceChoices: LunchRiceChoice[] = ["Pork Fried Rice", "White Rice"];
@@ -180,6 +182,26 @@ type NewItemDraft = {
 function makeLocalKey() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return `k-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+}
+
+function isAdminSection(value: string | null): value is AdminSection {
+  return Boolean(value && adminSectionValues.includes(value as AdminSection));
+}
+
+function sectionFromLocation() {
+  const params = new URLSearchParams(window.location.search);
+  const querySection = params.get("section");
+  if (isAdminSection(querySection)) return querySection;
+  const hashSection = window.location.hash.replace(/^#/, "");
+  if (isAdminSection(hashSection)) return hashSection;
+  return null;
+}
+
+function saveAdminSectionToUrl(section: AdminSection) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("section", section);
+  url.hash = "";
+  window.history.replaceState(null, "", `${url.pathname}${url.search}`);
 }
 
 function itemSizesFor(item: MenuItem) {
@@ -387,6 +409,16 @@ export function AdminDashboard() {
     kitchenPrintStatusRef.current = saved;
     setKitchenPrintStatus(saved);
     setPrintStatusLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    const savedSection = window.localStorage.getItem(adminSectionStorageKey);
+    const restoredSection = sectionFromLocation() ?? (isAdminSection(savedSection) ? savedSection : null);
+    if (!restoredSection) return;
+    setActiveSection(restoredSection);
+    window.localStorage.setItem(adminSectionStorageKey, restoredSection);
+    saveAdminSectionToUrl(restoredSection);
+    if (restoredSection === "past-orders") setFilter("past");
   }, []);
 
   useEffect(() => {
@@ -816,6 +848,8 @@ export function AdminDashboard() {
     setActiveSection(section);
     setAdminMenuOpen(false);
     setSelectedOrderNumber(null);
+    window.localStorage.setItem(adminSectionStorageKey, section);
+    saveAdminSectionToUrl(section);
     if (section === "past-orders") setFilter("past");
   }
 
