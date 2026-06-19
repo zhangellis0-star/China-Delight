@@ -372,7 +372,7 @@ export function SpecialOffersManager({ embedded = false }: { embedded?: boolean 
       <div className="mt-4 grid gap-2">
         {offers.length === 0 && !loading && <p className="rounded-md border border-china-gold/60 bg-white p-4 text-center font-bold text-stone-600">No special offers yet. Click “Create offer”.</p>}
         {offers.map((offer) => (
-          <div key={offer.id} className="grid gap-3 rounded-md border border-china-gold/50 bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+          <div key={offer.id} className="grid min-w-0 gap-3 rounded-md border border-china-gold/50 bg-white p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,auto)] sm:items-center">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="min-w-0 break-words font-black text-stone-900">{offer.title}</span>

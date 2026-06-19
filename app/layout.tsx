@@ -19,7 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         <CartProvider>
           <SiteHeader />
-          <main>{children}</main>
+          <main className="min-w-0 max-w-full">{children}</main>
           <AdminAwareFooter />
         </CartProvider>
       </body>

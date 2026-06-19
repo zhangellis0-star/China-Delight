@@ -158,11 +158,11 @@ export function ReportsHistoryPage() {
   }
 
   return (
-    <section className="mx-auto max-w-7xl bg-[linear-gradient(180deg,#fff7e8,#f4fbfb)] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <section className="admin-shell mobile-safe mx-auto max-w-7xl bg-[linear-gradient(180deg,#fff7e8,#f4fbfb)] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-china-red">Admin</p>
-          <h1 className="text-2xl font-black sm:text-3xl">Reports History</h1>
+          <h1 className="break-words text-2xl font-black sm:text-3xl">Reports History</h1>
           <p className="mt-1 text-sm font-bold text-stone-600">Review, export, and reprint generated daily reports from existing order history.</p>
         </div>
         <Link href="/admin" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-md border border-china-gold/70 bg-white px-4 text-sm font-black text-stone-800">
@@ -171,9 +171,9 @@ export function ReportsHistoryPage() {
         </Link>
       </div>
 
-      <div className="mt-5 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-          <div className="grid gap-3 sm:grid-cols-[12rem_12rem_auto]">
+      <div className="mt-5 min-w-0 rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
+        <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,auto)] lg:items-end">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,12rem)_minmax(0,1fr)]">
             <label className="grid gap-1 text-xs font-black text-stone-700">
               Report date
               <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="focus-ring h-11 rounded-md border border-china-gold/70 bg-white px-3 font-bold" />
@@ -190,7 +190,7 @@ export function ReportsHistoryPage() {
               {loading ? "Loading..." : "View report"}
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex max-w-full flex-wrap gap-2">
             <button onClick={() => loadReport(selectedDate)} disabled={loading} className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:opacity-60">
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               Refresh
@@ -209,8 +209,8 @@ export function ReportsHistoryPage() {
         {message && <p className="mt-3 rounded-md bg-green-100 px-3 py-2 text-sm font-bold text-green-800">{message}</p>}
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[19rem_1fr]">
-        <aside className="rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm sm:p-4">
+      <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-[19rem_minmax(0,1fr)]">
+        <aside className="min-w-0 rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm sm:p-4">
           <p className="font-black text-china-red">Recent reports</p>
           <div className="mt-3 grid gap-2">
             {sortedReports.length === 0 && !loading ? (
@@ -233,12 +233,12 @@ export function ReportsHistoryPage() {
           </div>
         </aside>
 
-        <div className="grid gap-4">
+        <div className="grid min-w-0 gap-4">
           {report ? (
             <>
-              <div className="rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm sm:p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
+              <div className="min-w-0 rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm sm:p-4">
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <p className="text-xs font-black uppercase tracking-[0.14em] text-china-red">Selected report</p>
                     <h2 className="text-xl font-black">{report.dateLabel}</h2>
                     <p className="text-xs font-bold text-stone-600">Generated on demand from saved orders. {report.testOrdersExcluded} test order{report.testOrdersExcluded === 1 ? "" : "s"} excluded.</p>
@@ -266,7 +266,7 @@ export function ReportsHistoryPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm sm:p-4">
+              <div className="min-w-0 rounded-lg border border-china-gold/60 bg-white p-3 shadow-sm sm:p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-black text-china-red">Report details</p>
                   <p className="text-xs font-bold text-stone-600">{report.orders.length} real order{report.orders.length === 1 ? "" : "s"}</p>
@@ -277,7 +277,7 @@ export function ReportsHistoryPage() {
                   ) : (
                     report.orders.map((order) => (
                       <article key={order.orderNumber} className="rounded-md border border-china-gold/40 bg-[#fff7e8] p-3">
-                        <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-start">
+                        <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,auto)] sm:items-start">
                           <div className="min-w-0">
                             <p className="font-black text-china-red">#{order.orderNumber} <span className="text-stone-900">{order.timeLabel}</span></p>
                             <p className="break-words text-sm font-bold text-stone-800">{order.customerName} / {order.customerPhone}</p>

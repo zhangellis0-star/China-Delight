@@ -339,7 +339,7 @@ export function PromoManager({ embedded = false }: { embedded?: boolean }) {
         {promoCodes.map((promo) => {
           const expired = isExpired(promo);
           return (
-            <div key={promo.id} className="grid gap-3 rounded-md border border-china-gold/50 bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div key={promo.id} className="grid min-w-0 gap-3 rounded-md border border-china-gold/50 bg-white p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,auto)] sm:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="break-all font-black text-stone-900">{promo.code}</span>

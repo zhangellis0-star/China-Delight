@@ -1231,9 +1231,9 @@ export function AdminDashboard() {
   }
 
   return (
-    <section className="mx-auto max-w-7xl overflow-hidden bg-[linear-gradient(180deg,#fff7e8,#f4fbfb)] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+    <section className="admin-shell mobile-safe mx-auto max-w-7xl bg-[linear-gradient(180deg,#fff7e8,#f4fbfb)] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={() => setAdminMenuOpen(true)}
             aria-label="Open admin menu"
@@ -1241,12 +1241,12 @@ export function AdminDashboard() {
           >
             <Menu className="h-6 w-6" />
           </button>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.16em] text-china-red">Admin</p>
-            <h1 className="text-2xl font-black sm:text-3xl">{sectionTitles[activeSection]}</h1>
+            <h1 className="break-words text-2xl font-black sm:text-3xl">{sectionTitles[activeSection]}</h1>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
           <button
             onClick={() => loadOrders({ manual: true })}
             disabled={refreshing || updatingOrders.size > 0}
@@ -1264,7 +1264,7 @@ export function AdminDashboard() {
           </button>
         </div>
       </div>
-      <div className="mt-3 flex flex-col gap-2 text-sm font-bold text-stone-600 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="mt-3 flex min-w-0 flex-col gap-2 text-sm font-bold text-stone-600 sm:flex-row sm:flex-wrap sm:items-center">
         <span>Auto-refreshing every 15 seconds.</span>
         <span>{lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Loading latest orders..."}</span>
         {refreshError && <span className="rounded-md bg-amber-100 px-3 py-2 text-amber-900">{refreshError}</span>}
@@ -1304,7 +1304,7 @@ export function AdminDashboard() {
         </div>
       )}
 
-      <div className="mt-6 min-w-0 space-y-6">
+      <div className="mt-6 min-w-0 max-w-full space-y-6 overflow-x-hidden">
       {activeSection === "ordering" && (
         <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
           <p className="font-black text-china-red">Online Ordering Status</p>
@@ -1416,7 +1416,7 @@ export function AdminDashboard() {
               <p className="text-sm font-bold text-stone-600">Daily summary, report history, printing, and CSV export tools in one place.</p>
             </div>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <button onClick={createTestOrder} disabled={creatingTestOrder} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
               {creatingTestOrder ? "Creating test order..." : "Create test order"}
             </button>
@@ -1432,7 +1432,7 @@ export function AdminDashboard() {
           </div>
           <p className="mt-3 text-xs font-bold text-stone-600">The daily report also prints automatically at 10:00 PM. Test orders are clearly marked TEST and excluded from report totals.</p>
           {toolMessage && <p className="mt-3 rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{toolMessage}</p>}
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {[
               ["Orders today", dailySummary.totalOrders],
               ["New", dailySummary.newOrders],
@@ -1451,7 +1451,7 @@ export function AdminDashboard() {
               </div>
             ))}
           </div>
-          <div className="mt-5 grid gap-4 border-t border-china-gold/40 pt-4">
+          <div className="mt-5 grid min-w-0 gap-4 border-t border-china-gold/40 pt-4">
           <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
             <p className="font-black text-china-red">Today&apos;s top items</p>
             <div className="mt-3 grid gap-2 text-sm">
@@ -1474,7 +1474,7 @@ export function AdminDashboard() {
                   <p className="font-black text-china-red">Daily Reports History</p>
                   <p className="text-xs font-bold text-stone-600">Generated from existing orders. Test orders are excluded from real totals.</p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-[10rem_auto]">
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
                   <label className="grid gap-1 text-xs font-black text-stone-700">
                     Report date
                     <input
@@ -1534,7 +1534,7 @@ export function AdminDashboard() {
 
                   <div className="grid gap-2">
                     <p className="text-xs font-black uppercase tracking-wide text-china-red">Recent reports</p>
-                    <div className="flex gap-2 overflow-x-auto pb-1">
+                    <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
                       {recentReports.map((report) => (
                         <button
                           key={report.date}
@@ -1638,7 +1638,7 @@ export function AdminDashboard() {
       {selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50" role="dialog" aria-modal="true">
           <button aria-label="Close order details" onClick={() => setSelectedOrderNumber(null)} className="absolute inset-0" />
-          <div className="relative z-10 flex h-full w-full max-w-lg flex-col overflow-y-auto bg-white shadow-warm">
+          <div className="relative z-10 flex h-full w-full max-w-lg max-w-[100vw] flex-col overflow-y-auto bg-white shadow-warm">
             <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-china-red">Order</p>
@@ -1752,7 +1752,7 @@ export function AdminDashboard() {
 
       {editingOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" role="dialog" aria-modal="true">
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-4 shadow-warm sm:p-5">
+          <div className="max-h-[92vh] w-full max-w-3xl max-w-[calc(100vw-1.5rem)] overflow-x-hidden overflow-y-auto rounded-lg bg-white p-4 shadow-warm sm:p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-black uppercase tracking-[0.14em] text-china-red">Edit order</p>
