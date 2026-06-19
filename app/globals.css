@@ -32,12 +32,6 @@ main {
   overflow-x: clip;
 }
 
-main:has(.admin-shell) {
-  min-height: calc(100vh - 75px);
-  min-height: calc(100dvh - 75px);
-  background: linear-gradient(180deg, #fff7e8, #f4fbfb);
-}
-
 img,
 svg,
 video,
