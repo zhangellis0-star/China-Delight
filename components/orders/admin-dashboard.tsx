@@ -238,6 +238,10 @@ function statusLabel(status: OrderStatus | AdminFilter) {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function isScheduledPickup(order: Pick<AdminOrder, "pickup_time_type" | "scheduled_pickup_time">) {
+  return Boolean(order.scheduled_pickup_time) && (!order.pickup_time_type || order.pickup_time_type === "scheduled");
+}
+
 function loadKitchenPrintStatus() {
   if (typeof window === "undefined") return {};
   try {
@@ -1161,7 +1165,12 @@ export function AdminDashboard() {
   // The single primary action for a card/detail view, chosen by status: New -> Accept,
   // accepted/preparing -> Mark Ready, ready -> Mark Picked Up (which clears it off the board).
   function primaryActionFor(order: AdminOrder): { label: string; short: string; className: string; run: () => void } | null {
-    if (order.status === "new") return { label: "Accept Order", short: "Accept", className: "bg-china-red text-white", run: () => setAcceptingOrder(order.order_number) };
+    if (order.status === "new") {
+      if (isScheduledPickup(order)) {
+        return { label: "Accept Scheduled Order", short: "Accept", className: "bg-china-red text-white", run: () => updateStatus(order.order_number, "accepted") };
+      }
+      return { label: "Accept Order", short: "Accept", className: "bg-china-red text-white", run: () => setAcceptingOrder(order.order_number) };
+    }
     if (order.status === "accepted" || order.status === "preparing") return { label: "Mark Ready", short: "Ready", className: "bg-china-green text-white", run: () => updateStatus(order.order_number, "ready") };
     if (order.status === "ready") return { label: "Mark Picked Up", short: "Picked Up", className: "bg-emerald-600 text-white", run: () => { updateStatus(order.order_number, "picked_up"); setSelectedOrderNumber(null); } };
     return null;
@@ -1173,7 +1182,7 @@ export function AdminDashboard() {
   function renderOrderCard(order: AdminOrder) {
     const isTestOrder = order.order_number.toUpperCase().startsWith("TEST");
     const printState = kitchenPrintStatus[order.order_number];
-    const scheduled = order.pickup_time_type === "scheduled" && Boolean(order.scheduled_pickup_time);
+    const scheduled = isScheduledPickup(order);
     const busy = updatingOrders.has(order.order_number);
     const printing = networkPrintingOrders.has(order.order_number);
     const primary = primaryActionFor(order);
@@ -1195,10 +1204,15 @@ export function AdminDashboard() {
               <span className="text-china-red">#{order.order_number}</span>
               {" · "}
               {scheduled
-                ? <span className="font-black text-china-ink">Scheduled {formatPickupDateTime(order.scheduled_pickup_time as string)}</span>
+                ? <span className="font-black text-china-ink">Scheduled</span>
                 : <span>ASAP</span>}
               {" · "}{statusLabel(order.status)}{isTestOrder ? " · TEST" : ""}
             </p>
+            {scheduled && (
+              <p className="mt-1 break-words rounded-md bg-china-gold/80 px-2 py-1 text-xs font-black text-china-ink">
+                Scheduled pickup: {formatPickupDateTime(order.scheduled_pickup_time as string)}
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-1" onClick={(event) => event.stopPropagation()}>
             {primary && (
@@ -1662,12 +1676,12 @@ export function AdminDashboard() {
                 </div>
               </div>
 
-              {selectedOrder.pickup_time_type === "scheduled" && selectedOrder.scheduled_pickup_time ? (
+              {isScheduledPickup(selectedOrder) ? (
                 <p className="rounded-md bg-china-gold px-3 py-2 text-sm font-black uppercase text-china-ink">Scheduled pickup · {formatPickupDateTime(selectedOrder.scheduled_pickup_time)}</p>
               ) : (
                 <p className="rounded-md border border-china-gold/60 bg-[#fff7e8] px-3 py-2 text-sm font-black text-stone-800">Pickup: ASAP</p>
               )}
-              <p className="text-sm font-bold text-stone-700">Ready: {readyLabel(selectedOrder)}</p>
+              {!isScheduledPickup(selectedOrder) && <p className="text-sm font-bold text-stone-700">Ready: {readyLabel(selectedOrder)}</p>}
               <p className="text-sm text-stone-600">{paymentLabel(selectedOrder.payment_method, selectedOrder.payment_status)}</p>
               {selectedOrder.customer_notes && (
                 <p className={`rounded-md px-3 py-2 text-sm font-bold ${hasInstructionAlert(selectedOrder.customer_notes) ? "bg-yellow-100 text-yellow-950" : "bg-china-paper text-stone-700"}`}>Notes: {selectedOrder.customer_notes}</p>
@@ -1733,7 +1747,7 @@ export function AdminDashboard() {
                       value={selectedOrder.status}
                       onChange={(event) => {
                         const nextStatus = event.target.value as OrderStatus;
-                        if (nextStatus === "accepted") { setAcceptingOrder(selectedOrder.order_number); return; }
+                        if (nextStatus === "accepted" && !isScheduledPickup(selectedOrder)) { setAcceptingOrder(selectedOrder.order_number); return; }
                         updateStatus(selectedOrder.order_number, nextStatus);
                         if (nextStatus === "picked_up" || nextStatus === "completed" || nextStatus === "cancelled") setSelectedOrderNumber(null);
                       }}
