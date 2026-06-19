@@ -1304,7 +1304,7 @@ export function AdminDashboard() {
         </div>
       )}
 
-      <div className="mt-6 min-w-0 max-w-full space-y-6 overflow-x-hidden">
+      <div className="mt-6 min-w-0 max-w-full space-y-6 [overflow-x:clip]">
       {activeSection === "ordering" && (
         <div className="rounded-lg border border-china-gold/60 bg-[#fff7e8] p-3 shadow-sm sm:p-4">
           <p className="font-black text-china-red">Online Ordering Status</p>
