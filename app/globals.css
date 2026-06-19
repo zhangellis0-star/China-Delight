@@ -58,7 +58,6 @@ textarea {
 }
 
 .admin-shell {
-  min-height: calc(100vh - 73px);
   width: 100%;
   max-width: 100vw;
   overflow-x: hidden;
