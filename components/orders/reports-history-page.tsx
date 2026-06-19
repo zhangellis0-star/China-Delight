@@ -158,7 +158,7 @@ export function ReportsHistoryPage() {
   }
 
   return (
-    <section className="admin-shell mobile-safe mx-auto max-w-7xl bg-[linear-gradient(180deg,#fff7e8,#f4fbfb)] px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+    <section className="admin-shell mobile-safe mx-auto max-w-7xl bg-[linear-gradient(180deg,#fff7e8,#f4fbfb)] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-china-red">Admin</p>
