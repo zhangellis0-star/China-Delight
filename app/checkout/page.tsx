@@ -428,7 +428,7 @@ export default function CheckoutPage() {
                 )}
               </div>
             )}
-            <p className="mt-3 text-sm font-bold text-stone-700">{ASAP_PICKUP_NOTE}</p>
+            {customer.pickupTimeType === "asap" && <p className="mt-3 text-sm font-bold text-stone-700">{ASAP_PICKUP_NOTE}</p>}
           </div>
 
           <div ref={paymentRef} className="rounded-md border border-stone-200 bg-china-paper p-3 sm:p-4">

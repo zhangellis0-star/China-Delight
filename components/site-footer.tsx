@@ -1,6 +1,13 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import { restaurant } from "@/lib/restaurant";
 
 export function SiteFooter() {
+  const pathname = usePathname();
+  // The admin dashboard has its own full-screen chrome; the public marketing footer
+  // would otherwise add a large dark block (and blank space) below it.
+  if (pathname?.startsWith("/admin")) return null;
   return (
     <footer className="border-t border-red-900/10 bg-china-ink text-white">
       <div className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 md:grid-cols-3 lg:px-8">

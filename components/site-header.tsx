@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Menu, Phone, ShoppingCart } from "lucide-react";
 import { useState } from "react";
 import { restaurant } from "@/lib/restaurant";
@@ -18,6 +19,10 @@ const links = [
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const { count } = useCart();
+  const pathname = usePathname();
+  // The admin dashboard renders its own header; the public nav would create a
+  // double sticky header (and push admin content down) on /admin pages.
+  if (pathname?.startsWith("/admin")) return null;
 
   return (
     <header className="sticky top-0 z-50 border-b border-red-900/10 bg-white/95 backdrop-blur">
