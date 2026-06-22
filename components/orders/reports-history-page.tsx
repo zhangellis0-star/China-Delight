@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Download, Printer, RefreshCw } from "lucide-react";
 import { formatPrice } from "@/lib/pricing";
 import type { OrderStatus, PaymentMethod, PaymentStatus } from "@/types";
@@ -108,6 +108,7 @@ export function ReportsHistoryPage() {
   const [printing, setPrinting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const printingRef = useRef(false);
 
   const sortedReports = useMemo(
     () => [...recentReports].sort((left, right) => right.date.localeCompare(left.date)),
@@ -138,6 +139,8 @@ export function ReportsHistoryPage() {
 
   async function printReport() {
     if (!report) return;
+    if (printingRef.current) return;
+    printingRef.current = true;
     setPrinting(true);
     setError(null);
     setMessage(null);
@@ -149,10 +152,11 @@ export function ReportsHistoryPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not print report.");
-      setMessage(`Report printed for ${report.dateLabel}.`);
+      setMessage(`Daily report printed to Epson for ${report.dateLabel}.`);
     } catch (printError) {
       setError(printError instanceof Error ? printError.message : "Could not print report.");
     } finally {
+      printingRef.current = false;
       setPrinting(false);
     }
   }
@@ -163,7 +167,7 @@ export function ReportsHistoryPage() {
         <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-china-red">Admin</p>
           <h1 className="break-words text-2xl font-black sm:text-3xl">Reports History</h1>
-          <p className="mt-1 text-sm font-bold text-stone-600">Review, export, and reprint generated daily reports from existing order history.</p>
+          <p className="mt-1 text-sm font-bold text-stone-600">Review, export, and print daily reports directly to the Epson kitchen printer.</p>
         </div>
         <Link href="/admin" className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-md border border-china-gold/70 bg-white px-4 text-sm font-black text-stone-800">
           <ArrowLeft className="h-4 w-4" />
@@ -201,7 +205,7 @@ export function ReportsHistoryPage() {
             </button>
             <button onClick={printReport} disabled={!report || printing} className="focus-ring inline-flex min-h-11 items-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-50">
               <Printer className="h-4 w-4" />
-              {printing ? "Printing..." : "Print"}
+              {printing ? "Printing..." : "Print Daily Report to Epson"}
             </button>
           </div>
         </div>

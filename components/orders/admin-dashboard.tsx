@@ -388,7 +388,8 @@ export function AdminDashboard() {
   const [dailyReportHistoryError, setDailyReportHistoryError] = useState<string | null>(null);
   const [dailyReportReprintDate, setDailyReportReprintDate] = useState<string | null>(null);
   const [toolMessage, setToolMessage] = useState<string | null>(null);
-  const dailyReportAutoRef = useRef(false);
+  const dailyReportBusyRef = useRef(false);
+  const dailyReportReprintRef = useRef<string | null>(null);
   const [networkPrintingOrders, setNetworkPrintingOrders] = useState<Set<string>>(new Set());
   const [kitchenPrintStatus, setKitchenPrintStatus] = useState<Record<string, KitchenPrintState>>({});
   const [printStatusLoaded, setPrintStatusLoaded] = useState(false);
@@ -726,20 +727,23 @@ export function AdminDashboard() {
   }, [dailyReportDetail, dailyReportHistoryLoading, loadDailyReportHistory, reportDate, reportsPanelOpen]);
 
   async function reprintDailyReport(date: string) {
+    if (dailyReportReprintRef.current === date) return;
+    dailyReportReprintRef.current = date;
     setDailyReportReprintDate(date);
     setToolMessage(null);
     try {
       const response = await fetch("/api/admin/daily-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, force: true })
+        body: JSON.stringify({ date })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Daily report print failed.");
-      setToolMessage(`Daily report reprinted for ${data.date}${data.summary ? ` (${data.summary.totalOrders} orders, total ${formatPrice(data.summary.grandTotal)})` : ""}.`);
+      setToolMessage(`Daily report printed to Epson for ${data.date}${data.summary ? ` (${data.summary.totalOrders} orders, total ${formatPrice(data.summary.grandTotal)})` : ""}.`);
     } catch (error) {
       setToolMessage(error instanceof Error ? error.message : "Daily report print failed.");
     } finally {
+      dailyReportReprintRef.current = null;
       setDailyReportReprintDate(null);
     }
   }
@@ -1077,57 +1081,30 @@ export function AdminDashboard() {
     }
   }
 
-  const printDailyReport = useCallback(async (options: { auto?: boolean } = {}) => {
+  const printDailyReport = useCallback(async () => {
+    if (dailyReportBusyRef.current) return false;
+    dailyReportBusyRef.current = true;
     setDailyReportBusy(true);
-    if (!options.auto) setToolMessage(null);
+    setToolMessage(null);
     try {
+      const date = reportDate || easternDateKey();
       const response = await fetch("/api/admin/daily-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(options.auto ? { auto: true } : { force: true })
+        body: JSON.stringify({ date })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Daily report print failed.");
-      if (data.skipped) {
-        if (!options.auto) setToolMessage("Daily report was already printed today.");
-      } else {
-        setToolMessage(`Daily report printed${data.summary ? ` (${data.summary.totalOrders} orders, total ${formatPrice(data.summary.grandTotal)})` : ""}.`);
-      }
+      setToolMessage(`Daily report printed to Epson${data.summary ? ` (${data.summary.totalOrders} orders, total ${formatPrice(data.summary.grandTotal)})` : ""}.`);
       return true;
     } catch (error) {
       setToolMessage(error instanceof Error ? error.message : "Daily report print failed.");
       return false;
     } finally {
+      dailyReportBusyRef.current = false;
       setDailyReportBusy(false);
     }
-  }, []);
-
-  // Auto-print the daily report at/after 10:00 PM Eastern, once per calendar day. A localStorage
-  // marker (per device) plus the server-side dedupe guard prevent duplicate prints.
-  useEffect(() => {
-    const storageKey = "china-delight-daily-report-date";
-    function easternHour() {
-      return Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hourCycle: "h23" }).format(new Date()));
-    }
-    function easternDay() {
-      return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    }
-    function checkAutoPrint() {
-      if (dailyReportAutoRef.current) return;
-      if (easternHour() < 22) return;
-      const todayKey = easternDay();
-      if (window.localStorage.getItem(storageKey) === todayKey) return;
-      dailyReportAutoRef.current = true;
-      // Mark attempted up-front so a printer error doesn't cause repeated retries all night.
-      window.localStorage.setItem(storageKey, todayKey);
-      void printDailyReport({ auto: true }).finally(() => {
-        dailyReportAutoRef.current = false;
-      });
-    }
-    checkAutoPrint();
-    const timer = window.setInterval(checkAutoPrint, 60000);
-    return () => window.clearInterval(timer);
-  }, [printDailyReport]);
+  }, [reportDate]);
 
   const currentEditTotals = editedTotals(editingOrder);
   const draftMenuItem = newItemDraft ? menuItems.find((candidate) => candidate.id === newItemDraft.menuItemId) ?? null : null;
@@ -1435,7 +1412,7 @@ export function AdminDashboard() {
               {creatingTestOrder ? "Creating test order..." : "Create test order"}
             </button>
             <button onClick={() => printDailyReport()} disabled={dailyReportBusy} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60">
-              {dailyReportBusy ? "Printing report..." : "Print daily report"}
+              {dailyReportBusy ? "Printing..." : "Print Daily Report to Epson"}
             </button>
             <button onClick={exportTodayCsv} className="focus-ring min-h-11 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
               Export today CSV
@@ -1444,7 +1421,7 @@ export function AdminDashboard() {
               View reports history
             </Link>
           </div>
-          <p className="mt-3 text-xs font-bold text-stone-600">The daily report also prints automatically at 10:00 PM. Test orders are clearly marked TEST and excluded from report totals.</p>
+          <p className="mt-3 text-xs font-bold text-stone-600">Daily reports print directly to the Epson kitchen printer. Test orders are clearly marked TEST and excluded from report totals.</p>
           {toolMessage && <p className="mt-3 rounded-md bg-amber-100 px-3 py-2 text-sm font-bold text-amber-900">{toolMessage}</p>}
           <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {[
@@ -1523,7 +1500,7 @@ export function AdminDashboard() {
                         disabled={dailyReportReprintDate === dailyReportDetail.date}
                         className="focus-ring min-h-10 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {dailyReportReprintDate === dailyReportDetail.date ? "Reprinting..." : "Reprint report"}
+                        {dailyReportReprintDate === dailyReportDetail.date ? "Printing..." : "Print Daily Report to Epson"}
                       </button>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold sm:grid-cols-4">
@@ -1724,13 +1701,10 @@ export function AdminDashboard() {
                     {updatingOrders.has(selectedOrder.order_number) ? "Saving..." : primaryActionFor(selectedOrder)?.label}
                   </button>
                 )}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid gap-2">
                   <button onClick={() => printKitchenTicket(selectedOrder)} disabled={networkPrintingOrders.has(selectedOrder.order_number)} className="focus-ring min-h-11 rounded-md border border-china-red bg-china-red px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
                     {networkPrintingOrders.has(selectedOrder.order_number) ? "Printing..." : kitchenPrintStatus[selectedOrder.order_number]?.status === "printed" ? "Reprint kitchen ticket" : "Kitchen print"}
                   </button>
-                  <Link href={`/admin/orders/${selectedOrder.order_number}/print`} className="focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
-                    <Printer className="mr-2 h-4 w-4" /> AirPrint / browser
-                  </Link>
                 </div>
                 {kitchenPrintStatus[selectedOrder.order_number]?.status === "failed" && (
                   <p className="whitespace-pre-wrap break-words rounded-md bg-amber-100 px-3 py-2 text-xs font-black uppercase text-amber-950">Print failed: {kitchenPrintStatus[selectedOrder.order_number]?.message ?? "Printer offline."}</p>

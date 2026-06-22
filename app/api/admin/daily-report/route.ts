@@ -10,8 +10,8 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const dedupeKey = "daily_report";
 const tz = "America/New_York";
+const activePrints = new Set<string>();
 
 function easternLabel(date: Date) {
   return new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(date);
@@ -157,37 +157,29 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 400 });
 
-  const body = (await request.json().catch(() => ({}))) as { auto?: boolean; force?: boolean; date?: string };
+  const body = (await request.json().catch(() => ({}))) as { date?: string };
   const now = new Date();
-  const todayKey = easternDateKey(now);
-  const reportDate = body.auto ? todayKey : body.date && isDateKey(body.date) ? body.date : todayKey;
+  const reportDate = body.date && isDateKey(body.date) ? body.date : easternDateKey(now);
+  const printKey = `daily-report:${reportDate}`;
 
-  // Read the dedupe marker. Auto (scheduled 10pm) runs skip if today's report already printed.
-  const { data: dedupeRow } = await supabase.from("operational_settings").select("value").eq("key", dedupeKey).maybeSingle();
-  const lastPrintedDate = (dedupeRow?.value as { lastPrintedDate?: string } | null)?.lastPrintedDate ?? null;
-  if (body.auto && !body.force && lastPrintedDate === todayKey) {
-    return NextResponse.json({ ok: true, skipped: true, reason: "Daily report already printed today.", date: todayKey });
+  if (activePrints.has(printKey)) {
+    return NextResponse.json({ error: "Daily report is already printing. Wait for it to finish before trying again." }, { status: 409 });
   }
-
-  const { orders, error } = await ordersForDate(reportDate);
-  if (error) return NextResponse.json({ error }, { status: 500 });
-  const summary = summarizeDailyOrders(orders);
+  activePrints.add(printKey);
 
   try {
+    const { orders, error } = await ordersForDate(reportDate);
+    if (error) return NextResponse.json({ error }, { status: 500 });
+    const summary = summarizeDailyOrders(orders);
+
     await sendToPrinter(escposDailyReport(summary, { dateLabel: dateLabel(reportDate), printedAtLabel: easternTimeLabel(now) }));
+
+    return NextResponse.json({ ok: true, printerLabel, date: reportDate, summary });
   } catch (printError) {
     const message = printError instanceof Error ? printError.message : "Unknown printer error";
     console.error("[daily-report] print failed", { date: reportDate, message });
-    return NextResponse.json({ error: `${printerLabel} failed: ${message}`, summary }, { status: 502 });
+    return NextResponse.json({ error: `${printerLabel} failed: ${message}` }, { status: 502 });
+  } finally {
+    activePrints.delete(printKey);
   }
-
-  // Only the scheduled (auto) run records the dedupe marker, so manual test prints never
-  // suppress the real 10pm report.
-  if (body.auto) {
-    await supabase
-      .from("operational_settings")
-      .upsert({ key: dedupeKey, value: { lastPrintedDate: todayKey }, updated_at: new Date().toISOString() }, { onConflict: "key" });
-  }
-
-  return NextResponse.json({ ok: true, printerLabel, date: reportDate, summary });
 }
