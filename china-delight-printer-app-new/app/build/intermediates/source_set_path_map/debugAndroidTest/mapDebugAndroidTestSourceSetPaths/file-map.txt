@@ -1,0 +1,4 @@
+com.chinadelight.printbridge.test.app-androidTest-0 C:\Users\zhang\OneDrive\Documents\China Delight\android-print-bridge\app\build\generated\res\resValues\androidTest\debug
+com.chinadelight.printbridge.test.app-mergeDebugAndroidTestResources-1 C:\Users\zhang\OneDrive\Documents\China Delight\android-print-bridge\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+com.chinadelight.printbridge.test.app-mergeDebugAndroidTestResources-2 C:\Users\zhang\OneDrive\Documents\China Delight\android-print-bridge\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+com.chinadelight.printbridge.test.app-debugAndroidTest-3 C:\Users\zhang\OneDrive\Documents\China Delight\android-print-bridge\app\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources

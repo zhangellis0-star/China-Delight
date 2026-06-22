@@ -53,6 +53,7 @@ const ESC = 0x1b;
 const GS = 0x1d;
 export const cmd = {
   init: Buffer.from([ESC, 0x40]),
+  fontA: Buffer.from([ESC, 0x4d, 0x00]),
   alignLeft: Buffer.from([ESC, 0x61, 0x00]),
   alignCenter: Buffer.from([ESC, 0x61, 0x01]),
   boldOn: Buffer.from([ESC, 0x45, 0x01]),

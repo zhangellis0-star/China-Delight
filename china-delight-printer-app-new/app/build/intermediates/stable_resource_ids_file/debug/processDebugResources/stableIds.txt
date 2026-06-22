@@ -1,0 +1,2 @@
+com.chinadelight.printerapp:xml/network_security_config = 0x7f020000
+com.chinadelight.printerapp:string/app_name = 0x7f010000

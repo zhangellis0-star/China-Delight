@@ -22,6 +22,8 @@ export type PrintOrder = {
   customer_name: string;
   customer_phone: string;
   customer_notes?: string | null;
+  payment_method?: string | null;
+  payment_status?: string | null;
   pickup_time_type?: string | null;
   scheduled_pickup_time?: string | null;
   estimated_ready_at?: string | null;
@@ -103,6 +105,13 @@ function isTestOrder(order: PrintOrder) {
   return order.order_number.toUpperCase().startsWith("TEST");
 }
 
+function paymentText(order: PrintOrder) {
+  if (order.payment_method === "stripe") {
+    return `PAID ONLINE${order.payment_status ? ` / ${String(order.payment_status).toUpperCase()}` : ""}`;
+  }
+  return "PAY AT PICKUP";
+}
+
 // Kitchen / pickup ticket for 80mm thermal paper. Mirrors the AirPrint ticket
 // (components/orders/print-ticket.tsx) as closely as ESC/POS allows: name+phone+address header,
 // centered order number, a prominent pickup block right after it (BIG scheduled-pickup warning when
@@ -111,7 +120,7 @@ function isTestOrder(order: PrintOrder) {
 export function escposTicket(order: PrintOrder) {
   const divider = "-".repeat(lineWidth);
   const doubleDivider = "=".repeat(lineWidth);
-  const chunks: Buffer[] = [cmd.init];
+  const chunks: Buffer[] = [cmd.init, cmd.fontA, cmd.alignLeft, cmd.sizeNormal, cmd.boldOff];
   const line = (value: string) => chunks.push(Buffer.from(`${value}\n`, "ascii"));
   const wrapped = (value: string, indent = 0) => {
     const pad = " ".repeat(indent);
@@ -119,68 +128,67 @@ export function escposTicket(order: PrintOrder) {
   };
 
   // Header: restaurant name + phone + address, centered.
-  chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeLarge);
+  chunks.push(cmd.alignCenter, cmd.boldOn);
   line("CHINA DELIGHT");
-  chunks.push(cmd.sizeNormal);
+  chunks.push(cmd.boldOff);
   line(text(restaurant.phone));
   line(text(restaurant.address));
-  line("Kitchen / Pickup Ticket");
+  line("KITCHEN TICKET");
   if (isTestOrder(order)) {
-    chunks.push(cmd.sizeTall);
+    chunks.push(cmd.boldOn, cmd.sizeTall);
     line("*** TEST ORDER ***");
-    chunks.push(cmd.sizeNormal);
+    chunks.push(cmd.sizeNormal, cmd.boldOff);
   }
-  chunks.push(cmd.boldOff);
+  chunks.push(cmd.alignLeft);
   line(divider);
 
   // Order number: centered, double height (matches the AirPrint "#order" line).
-  chunks.push(cmd.boldOn, cmd.sizeTall);
+  chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeLarge);
   line(`#${text(order.order_number)}`);
-  chunks.push(cmd.sizeNormal, cmd.boldOff);
+  chunks.push(cmd.sizeNormal, cmd.boldOff, cmd.alignLeft);
+  line(divider);
 
   // Pickup block right after the order number (like AirPrint). Scheduled = BIG warning; otherwise a
   // clear ASAP block. Never show both, and no conflicting ready/ASAP line when scheduled.
   if (isScheduled(order)) {
-    line(doubleDivider);
-    chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeTall);
-    line("SCHEDULED PICKUP:");
-    wrapped(text(pickupText(order)).toUpperCase());
-    chunks.push(cmd.sizeNormal, cmd.boldOff, cmd.alignLeft);
-    line(doubleDivider);
+    chunks.push(cmd.boldOn);
+    line("PICKUP: SCHEDULED");
+    wrapped(text(pickupText(order)).toUpperCase(), 2);
+    chunks.push(cmd.boldOff);
   } else {
-    line(doubleDivider);
-    chunks.push(cmd.alignCenter, cmd.boldOn, cmd.sizeTall);
+    chunks.push(cmd.boldOn);
     line("PICKUP: ASAP");
-    chunks.push(cmd.sizeNormal, cmd.boldOff, cmd.alignLeft);
-    line(doubleDivider);
+    chunks.push(cmd.boldOff);
   }
+  chunks.push(cmd.boldOn);
+  line(`PAYMENT: ${paymentText(order)}`);
+  chunks.push(cmd.boldOff);
+  line(divider);
 
   // Customer info, left aligned. Phone enlarged for quick pickup calls (matches AirPrint).
-  chunks.push(cmd.boldOn);
   line(`NAME: ${text(order.customer_name)}`);
-  chunks.push(cmd.sizeTall);
   line(`PHONE: ${text(order.customer_phone)}`);
-  chunks.push(cmd.sizeNormal, cmd.boldOff);
   if (order.created_at) line(`ORDERED: ${text(formatPickupDateTime(order.created_at))}`);
   if (!isScheduled(order) && order.estimated_ready_at) line(`READY: ${text(formatPickupDateTime(order.estimated_ready_at))}`);
 
   if (order.customer_notes) {
-    line(divider);
+    line(doubleDivider);
     chunks.push(cmd.boldOn);
-    line("ORDER NOTES:");
+    line("CUSTOMER NOTES:");
     wrapped(text(order.customer_notes).toUpperCase());
     chunks.push(cmd.boldOff);
+    line(doubleDivider);
   }
-  line(doubleDivider);
+  line(divider);
 
   // Items: name big + bold, line price, plain info lines (size/combo/lunch), and a very obvious
   // "CUSTOMER CHANGED" block for anything the customer customized (incl. special instructions).
   // A default spice level the customer never changed is not printed at all.
   for (const item of order.order_items ?? []) {
     const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${item.item_name}`;
-    chunks.push(cmd.boldOn, cmd.sizeTall);
+    chunks.push(cmd.boldOn);
     wrapped(itemTitle.toUpperCase());
-    chunks.push(cmd.sizeNormal, cmd.boldOff);
+    chunks.push(cmd.boldOff);
     line(moneyLine("", Number(item.unit_price || 0) * Number(item.quantity || 0)));
 
     const { customLines, infoLines, notes, freeOffer } = classifyItem(item);
@@ -192,17 +200,18 @@ export function escposTicket(order: PrintOrder) {
     }
 
     for (const info of infoLines) {
-      wrapped(`- ${info}`, 3);
+      wrapped(`- ${info}`, 2);
     }
 
     if (customLines.length > 0 || notes) {
+      line(divider);
       chunks.push(cmd.boldOn);
-      line("*** CUSTOMER CHANGED ***");
+      line("SPECIAL INSTRUCTIONS:");
       for (const change of customLines) {
-        wrapped(`CUSTOM: ${change.toUpperCase()}`);
+        wrapped(`- ${change.toUpperCase()}`, 2);
       }
       if (notes) {
-        wrapped(`CUSTOM NOTE: ${notes.toUpperCase()}`);
+        wrapped(`- NOTE: ${notes.toUpperCase()}`, 2);
       }
       chunks.push(cmd.boldOff);
     }

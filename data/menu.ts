@@ -47,7 +47,7 @@ const rawMenuItems: MenuItem[] = [
   { id: "fried-wonton", number: "5", name: "Fried Wonton (12)", category: "Appetizers", prices: { order: 6.95 }, options: regularOptions },
   { id: "crab-rangoon", number: "6", name: "Crab Rangoon (10) or Cheese Wonton", category: "Appetizers", prices: { order: 8.35 }, options: regularOptions },
   { id: "teriyaki-beef", number: "8", name: "Teriyaki Beef (2)", category: "Appetizers", prices: { order: 6.75 }, options: regularOptions },
-  { id: "bar-b-q-spare-ribs", number: "9", name: "Bar-B-Q Spare Ribs", category: "Appetizers", prices: { small: 9.35, large: 18.95 }, options: regularOptions },
+  { id: "bar-b-q-spare-ribs", number: "9", name: "Bar-B-Q Spare Ribs", category: "Appetizers", prices: { small: 9.35, large: 18.95 }, options: regularOptions, description: "With Bone" },
   { id: "boneless-spare-ribs", number: "11", name: "Boneless Spare Ribs", category: "Appetizers", prices: { small: 9.35, large: 18.95 }, options: regularOptions },
   { id: "golden-finger-chicken", number: "12", name: "Golden Finger Chicken", category: "Appetizers", prices: { order: 9.95 }, options: regularOptions },
   { id: "chicken-nugget", number: "12a", name: "Chicken Nugget", category: "Appetizers", prices: { order: 6.85 }, options: regularOptions },
