@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAdminCookieName, isValidAdminSession } from "@/lib/admin-auth";
 import { sendOrderAcceptedEmail, sendOrderReadyEmail } from "@/lib/email";
+import { updateOrderStatusInGoogleSheets } from "@/lib/google-sheets";
 import { restaurant } from "@/lib/restaurant";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import type { OrderStatus } from "@/types";
@@ -227,6 +228,22 @@ export async function PATCH(request: Request) {
 
   const now = new Date().toISOString();
   const update: Record<string, string | number | null> = { status: body.status, updated_at: now };
+  let previousStatus: OrderStatus | string | null = null;
+  const { data: existingOrder, error: existingOrderError } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("order_number", body.orderNumber)
+    .maybeSingle();
+  if (existingOrderError) {
+    console.warn("[orders] Could not read previous status before Google Sheets status sync", {
+      orderNumber: body.orderNumber,
+      message: existingOrderError.message,
+      code: existingOrderError.code
+    });
+  } else {
+    previousStatus = existingOrder?.status ?? null;
+  }
+
   const minutes = body.estimatedReadyMinutes && body.estimatedReadyMinutes > 0 ? Math.round(body.estimatedReadyMinutes) : null;
   if (body.status === "accepted") {
     update.accepted_at = now;
@@ -246,6 +263,13 @@ export async function PATCH(request: Request) {
     .select("*, order_items(*)")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await updateOrderStatusInGoogleSheets({
+    orderNumber: body.orderNumber,
+    oldStatus: previousStatus,
+    newStatus: body.status,
+    updatedAt: new Date(now)
+  });
 
   let readyEmailSent = false;
   let acceptedEmailSent = false;
