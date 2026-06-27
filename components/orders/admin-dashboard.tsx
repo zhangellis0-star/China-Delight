@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Edit3, Menu, Phone, Plus, Printer, RefreshCw, Search, Volume2, VolumeX, X } from "lucide-react";
 import { customizationText } from "@/lib/order-display";
+import { activeOrderStatuses, editableOrderStatuses, finalOrderStatuses, normalizeOrderStatus, orderStatusLabel } from "@/lib/order-status";
 import { comboIncludedItems, confirmedReadyTime, formatPickupDateTime, isComboItem, isLunchItem } from "@/lib/order-rules";
 import { defaultSize, formatPrice, getItemPrice, hasReviewPrice } from "@/lib/pricing";
 import { menuItems } from "@/data/menu";
@@ -55,7 +56,16 @@ type AdminOrder = {
   }>;
 };
 
-type AdminFilter = "active" | "new" | "accepted" | "preparing" | "ready" | "past" | "picked_up" | "completed" | "cancelled" | "all";
+declare global {
+  interface Window {
+    AndroidPrintBridge?: {
+      printOrderWithRequest?: (orderNumber: string, requestId: string) => void;
+      printOrder?: (orderNumber: string) => void;
+    };
+  }
+}
+
+type AdminFilter = "active" | "new" | "accepted" | "past" | "picked_up" | "all";
 type BusyMode = "normal" | "busy" | "very_busy";
 type OrderingOverrideMode = "normal" | "open" | "paused";
 type AdminOperations = {
@@ -104,7 +114,6 @@ type EditOrderState = {
 };
 type DailyReportSummaryView = {
   totalOrders: number;
-  cancelledOrders: number;
   foodSales: number;
   discounts: number;
   tax: number;
@@ -139,7 +148,7 @@ type DailyReportDetail = {
 };
 type DailyReportRecent = Pick<DailyReportDetail, "date" | "dateLabel" | "testOrdersExcluded" | "summary">;
 
-const statuses: OrderStatus[] = ["new", "accepted", "preparing", "ready", "picked_up", "completed", "cancelled"];
+const statuses: OrderStatus[] = editableOrderStatuses;
 const adminSections: Array<{ value: AdminSection; label: string }> = [
   { value: "orders", label: "Orders" },
   { value: "past-orders", label: "Past Orders" },
@@ -156,8 +165,8 @@ const adminSectionGroups: Array<{ heading: string; sections: Array<{ value: Admi
   { heading: "Reports & Exports", sections: [{ value: "reports", label: "Reports & Exports" }] },
   { heading: "Operations", sections: adminSections.slice(2) }
 ];
-const activeStatuses: OrderStatus[] = ["new", "accepted", "preparing", "ready"];
-const pastStatuses: OrderStatus[] = ["picked_up", "completed", "cancelled"];
+const activeStatuses: OrderStatus[] = activeOrderStatuses;
+const pastStatuses: OrderStatus[] = finalOrderStatuses;
 const acceptReadyMinuteOptions = [5, 15, 25];
 const kitchenPrintStorageKey = "china-delight-kitchen-print-statuses";
 const adminSectionStorageKey = "china-delight-admin-section";
@@ -211,11 +220,7 @@ const alertWords = ["allergy", "allergic", "peanut", "shellfish", "gluten", " no
 const statusStyles: Record<OrderStatus, string> = {
   new: "bg-red-100 text-china-red border-red-300",
   accepted: "bg-china-aqua text-teal-900 border-teal-200",
-  preparing: "bg-amber-100 text-amber-950 border-china-gold",
-  ready: "bg-green-100 text-green-900 border-china-green",
-  picked_up: "bg-emerald-100 text-emerald-950 border-emerald-300",
-  completed: "bg-[#fff7e8] text-stone-800 border-china-gold/60",
-  cancelled: "bg-stone-200 text-stone-900 border-stone-300"
+  picked_up: "bg-emerald-100 text-emerald-950 border-emerald-300"
 };
 
 function paymentLabel(method?: PaymentMethod, status?: PaymentStatus) {
@@ -233,9 +238,10 @@ function readyLabel(order: AdminOrder) {
 }
 
 function statusLabel(status: OrderStatus | AdminFilter) {
-  if (status === "picked_up") return "Picked Up";
   if (status === "past") return "Past Orders";
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  if (status === "active") return "Active";
+  if (status === "all") return "All";
+  return orderStatusLabel(status);
 }
 
 function isScheduledPickup(order: Pick<AdminOrder, "pickup_time_type" | "scheduled_pickup_time">) {
@@ -260,10 +266,11 @@ function shouldAutoPrintOrder(order: AdminOrder) {
 }
 
 function matchesFilter(order: AdminOrder, filter: AdminFilter) {
+  const status = normalizeOrderStatus(order.status);
   if (filter === "all") return true;
-  if (filter === "active") return activeStatuses.includes(order.status);
-  if (filter === "past") return pastStatuses.includes(order.status);
-  return order.status === filter;
+  if (filter === "active") return activeStatuses.includes(status);
+  if (filter === "past") return pastStatuses.includes(status);
+  return status === filter;
 }
 
 function easternDateKey(value?: string) {
@@ -353,6 +360,47 @@ function normalizeLocalOrder(saved: string | null): AdminOrder[] {
       }))
     }
   ];
+}
+
+function normalizeAdminOrder(order: AdminOrder): AdminOrder {
+  return { ...order, status: normalizeOrderStatus(order.status) };
+}
+
+function bridgePrintOrder(orderNumber: string) {
+  return new Promise<string>((resolve, reject) => {
+    const bridge = window.AndroidPrintBridge;
+    if (!bridge?.printOrderWithRequest) {
+      reject(new Error("Open this admin page inside the China Delight Admin Printer tablet app, then try printing again."));
+      return;
+    }
+
+    const requestId = `print-${orderNumber}-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("cd-bridge-print-result", onResult as EventListener);
+      reject(new Error("Tablet print bridge did not report a result. Check the tablet app and printer connection."));
+    }, 20000);
+
+    function onResult(event: Event) {
+      const detail = (event as CustomEvent<{ requestId?: string; ok?: boolean; message?: string }>).detail;
+      if (detail?.requestId !== requestId) return;
+      window.clearTimeout(timeout);
+      window.removeEventListener("cd-bridge-print-result", onResult as EventListener);
+      if (detail.ok) {
+        resolve(detail.message || "Printed through tablet bridge.");
+      } else {
+        reject(new Error(detail.message || "Tablet bridge print failed."));
+      }
+    }
+
+    window.addEventListener("cd-bridge-print-result", onResult as EventListener);
+    try {
+      bridge.printOrderWithRequest(orderNumber, requestId);
+    } catch (error) {
+      window.clearTimeout(timeout);
+      window.removeEventListener("cd-bridge-print-result", onResult as EventListener);
+      reject(error instanceof Error ? error : new Error("Tablet bridge print failed."));
+    }
+  });
 }
 
 export function AdminDashboard() {
@@ -587,9 +635,9 @@ export function AdminDashboard() {
         }
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Unable to refresh orders.");
-        const serverOrders = (data.orders ?? []) as AdminOrder[];
+        const serverOrders = ((data.orders ?? []) as AdminOrder[]).map(normalizeAdminOrder);
         const serverOrderNumbers = new Set(serverOrders.map((order) => order.order_number));
-        const localOrders = normalizeLocalOrder(window.localStorage.getItem("china-delight-last-order")).filter((order) => !serverOrderNumbers.has(order.order_number));
+        const localOrders = normalizeLocalOrder(window.localStorage.getItem("china-delight-last-order")).map(normalizeAdminOrder).filter((order) => !serverOrderNumbers.has(order.order_number));
         const nextOrders = [...serverOrders, ...localOrders].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
         const nextNew = new Set(nextOrders.filter((order) => order.status === "new").map((order) => order.order_number));
         previousNewOrders.current = nextNew;
@@ -613,8 +661,7 @@ export function AdminDashboard() {
     return () => window.clearInterval(timer);
   }, [loadOrders, loadOperations]);
 
-  // Repeat the alert while any order is still "new"; stop as soon as none remain (every
-  // new order accepted/rejected/cancelled) or sound is muted/blocked.
+  // Repeat the alert while any order is still "new"; stop as soon as none remain or sound is muted/blocked.
   useEffect(() => {
     const hasNewOrders = orders.some((order) => order.status === "new");
     if (!hasNewOrders || muted || audioBlocked) {
@@ -635,18 +682,17 @@ export function AdminDashboard() {
   const dailySummary = useMemo(() => {
     const paidStripe = todayOrders.filter((order) => order.payment_method === "stripe" && order.payment_status === "paid");
     const cash = todayOrders.filter((order) => order.payment_method !== "stripe");
-    const totalSalesOrders = todayOrders.filter((order) => order.status !== "cancelled");
+    const totalSalesOrders = todayOrders;
     const totalSales = totalSalesOrders.reduce((sum, order) => sum + Number(order.total || 0), 0);
     const tips = totalSalesOrders.reduce((sum, order) => sum + Number(order.tip_amount || 0), 0);
     return {
       totalOrders: todayOrders.length,
       newOrders: todayOrders.filter((order) => order.status === "new").length,
       activeOrders: todayOrders.filter((order) => activeStatuses.includes(order.status)).length,
-      pickedUpCompleted: todayOrders.filter((order) => order.status === "picked_up" || order.status === "completed").length,
-      cancelled: todayOrders.filter((order) => order.status === "cancelled").length,
+      pickedUp: todayOrders.filter((order) => order.status === "picked_up").length,
       totalSales,
-      cashSales: cash.filter((order) => order.status !== "cancelled").reduce((sum, order) => sum + Number(order.total || 0), 0),
-      stripeSales: paidStripe.filter((order) => order.status !== "cancelled").reduce((sum, order) => sum + Number(order.total || 0), 0),
+      cashSales: cash.reduce((sum, order) => sum + Number(order.total || 0), 0),
+      stripeSales: paidStripe.reduce((sum, order) => sum + Number(order.total || 0), 0),
       tips,
       averageOrder: totalSalesOrders.length ? totalSales / totalSalesOrders.length : 0
     };
@@ -654,9 +700,7 @@ export function AdminDashboard() {
 
   const topItems = useMemo(() => {
     const rows = new Map<string, { name: string; quantity: number; sales: number }>();
-    todayOrders
-      .filter((order) => order.status !== "cancelled")
-      .forEach((order) => {
+    todayOrders.forEach((order) => {
         order.order_items.forEach((item) => {
           const key = `${item.item_number}-${item.item_name}`;
           const current = rows.get(key) ?? { name: `#${item.item_number} ${item.item_name}`, quantity: 0, sales: 0 };
@@ -785,7 +829,7 @@ export function AdminDashboard() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Status update failed.");
       if (data.order) {
-        const confirmedOrders = ordersRef.current.map((order) => (order.order_number === orderNumber ? { ...order, ...data.order } : order));
+        const confirmedOrders = ordersRef.current.map((order) => (order.order_number === orderNumber ? normalizeAdminOrder({ ...order, ...data.order }) : order));
         ordersRef.current = confirmedOrders;
         setOrders(confirmedOrders);
         if (data.order.status && data.order.status !== "new") {
@@ -813,18 +857,12 @@ export function AdminDashboard() {
     const orderNumber = order.order_number;
     setNetworkPrintingOrders((current) => new Set(current).add(orderNumber));
     try {
-      const response = await fetch("/api/admin/print-ticket", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNumber })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Kitchen print failed.");
+      const message = await bridgePrintOrder(orderNumber);
       saveKitchenPrintState(orderNumber, {
         status: "printed",
-        message: typeof data.printerLabel === "string" ? `Printed (${data.printerLabel})` : "Printed",
+        message,
         updatedAt: new Date().toISOString()
-      });
+    });
     } catch (error) {
       saveKitchenPrintState(orderNumber, {
         status: "failed",
@@ -1125,8 +1163,7 @@ export function AdminDashboard() {
   };
   const activeBoard = orders.filter((order) => activeStatuses.includes(order.status) && matchesQuery(order));
   const newColumn = activeBoard.filter((order) => order.status === "new");
-  // Right column groups every accepted/preparing/ready order (work in progress); "ready" cards
-  // surface a "Mark Picked Up" action so a finished order can be cleared off the active board.
+  // Right column groups accepted orders; picked-up orders clear off the active board.
   const prepColumn = activeBoard.filter((order) => order.status !== "new");
   const pastBoard = orders.filter((order) => pastStatuses.includes(order.status) && matchesFilter(order, filter) && matchesQuery(order));
   const sectionTitles: Record<AdminSection, string> = {
@@ -1139,8 +1176,7 @@ export function AdminDashboard() {
     settings: "Settings Info"
   };
 
-  // The single primary action for a card/detail view, chosen by status: New -> Accept,
-  // accepted/preparing -> Mark Ready, ready -> Mark Picked Up (which clears it off the board).
+  // The single primary action for a card/detail view, chosen by status: New -> Accept, Accepted -> Picked Up.
   function primaryActionFor(order: AdminOrder): { label: string; short: string; className: string; run: () => void } | null {
     if (order.status === "new") {
       if (isScheduledPickup(order)) {
@@ -1148,8 +1184,7 @@ export function AdminDashboard() {
       }
       return { label: "Accept Order", short: "Accept", className: "bg-china-red text-white", run: () => setAcceptingOrder(order.order_number) };
     }
-    if (order.status === "accepted" || order.status === "preparing") return { label: "Mark Ready", short: "Ready", className: "bg-china-green text-white", run: () => updateStatus(order.order_number, "ready") };
-    if (order.status === "ready") return { label: "Mark Picked Up", short: "Picked Up", className: "bg-emerald-600 text-white", run: () => { updateStatus(order.order_number, "picked_up"); setSelectedOrderNumber(null); } };
+    if (order.status === "accepted") return { label: "Mark Picked Up", short: "Picked Up", className: "bg-emerald-600 text-white", run: () => { updateStatus(order.order_number, "picked_up"); setSelectedOrderNumber(null); } };
     return null;
   }
 
@@ -1338,7 +1373,7 @@ export function AdminDashboard() {
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-500" />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, phone, order number, or item" className="focus-ring h-12 w-full rounded-md border border-china-gold/70 bg-white pl-12 pr-4 text-base" />
           </label>
-          <p className="text-xs font-bold text-stone-600">Tap a card to open the full order. Kitchen tickets print to the local Epson printer; new orders auto-print once while this page is open.</p>
+          <p className="text-xs font-bold text-stone-600">Tap a card to open the full order. Kitchen tickets print through the Android tablet bridge; new orders auto-print once while this page is open in the tablet app.</p>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-lg border border-china-red/40 bg-red-50/40 p-3">
               <div className="mb-2 flex items-center justify-between">
@@ -1352,7 +1387,7 @@ export function AdminDashboard() {
             </div>
             <div className="rounded-lg border border-china-gold/50 bg-white/50 p-3">
               <div className="mb-2 flex items-center justify-between">
-                <p className="font-black text-amber-900">Preparing</p>
+                <p className="font-black text-amber-900">Accepted</p>
                 <span className="rounded-md bg-amber-500 px-2 py-0.5 text-xs font-black text-white">{prepColumn.length}</span>
               </div>
               <div className="grid gap-3">
@@ -1428,8 +1463,7 @@ export function AdminDashboard() {
               ["Orders today", dailySummary.totalOrders],
               ["New", dailySummary.newOrders],
               ["Active", dailySummary.activeOrders],
-              ["Picked up / completed", dailySummary.pickedUpCompleted],
-              ["Cancelled", dailySummary.cancelled],
+              ["Picked up", dailySummary.pickedUp],
               ["Sales", formatPrice(dailySummary.totalSales)],
               ["Cash", formatPrice(dailySummary.cashSales)],
               ["Stripe paid", formatPrice(dailySummary.stripeSales)],
@@ -1492,7 +1526,7 @@ export function AdminDashboard() {
                       <div>
                         <p className="font-black">{dailyReportDetail.dateLabel}</p>
                         <p className="text-xs font-bold text-stone-600">
-                          {dailyReportDetail.testOrdersExcluded} test order{dailyReportDetail.testOrdersExcluded === 1 ? "" : "s"} excluded. Cancelled orders excluded from money totals.
+                          {dailyReportDetail.testOrdersExcluded} test order{dailyReportDetail.testOrdersExcluded === 1 ? "" : "s"} excluded. Legacy finished/cancelled statuses display as picked up in admin.
                         </p>
                       </div>
                       <button
@@ -1506,7 +1540,6 @@ export function AdminDashboard() {
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold sm:grid-cols-4">
                       {[
                         ["Real orders", dailyReportDetail.summary.totalOrders],
-                        ["Cancelled", dailyReportDetail.summary.cancelledOrders],
                         ["Subtotal", formatPrice(dailyReportDetail.summary.foodSales)],
                         ["Discounts", formatPrice(dailyReportDetail.summary.discounts)],
                         ["Tax", formatPrice(dailyReportDetail.summary.tax)],
@@ -1609,9 +1642,7 @@ export function AdminDashboard() {
           <div className="flex flex-wrap gap-2">
             {([
               { value: "past", label: "All past" },
-              { value: "picked_up", label: "Picked Up" },
-              { value: "completed", label: "Completed" },
-              { value: "cancelled", label: "Cancelled" }
+              { value: "picked_up", label: "Picked Up" }
             ] as Array<{ value: AdminFilter; label: string }>).map((tab) => (
               <button key={tab.value} onClick={() => setFilter(tab.value)} className={`focus-ring min-h-10 rounded-md border px-3 text-sm font-black ${filter === tab.value ? "border-china-red bg-china-red text-white" : "border-china-gold/70 bg-white text-stone-800"}`}>
                 {tab.label}
@@ -1658,7 +1689,7 @@ export function AdminDashboard() {
               ) : (
                 <p className="rounded-md border border-china-gold/60 bg-[#fff7e8] px-3 py-2 text-sm font-black text-stone-800">Pickup: ASAP</p>
               )}
-              {!isScheduledPickup(selectedOrder) && <p className="text-sm font-bold text-stone-700">Ready: {readyLabel(selectedOrder)}</p>}
+              {!isScheduledPickup(selectedOrder) && selectedOrder.status === "accepted" && <p className="text-sm font-bold text-stone-700">Ready: {readyLabel(selectedOrder)}</p>}
               <p className="text-sm text-stone-600">{paymentLabel(selectedOrder.payment_method, selectedOrder.payment_status)}</p>
               {selectedOrder.customer_notes && (
                 <p className={`rounded-md px-3 py-2 text-sm font-bold ${hasInstructionAlert(selectedOrder.customer_notes) ? "bg-yellow-100 text-yellow-950" : "bg-china-paper text-stone-700"}`}>Notes: {selectedOrder.customer_notes}</p>
@@ -1692,7 +1723,6 @@ export function AdminDashboard() {
               <div className="grid gap-1 text-[11px] font-black">
                 {selectedOrder.confirmation_email_sent_at && <span className="w-fit rounded-md bg-green-100 px-2 py-1 text-green-800">Confirmation email sent</span>}
                 {selectedOrder.accepted_email_sent_at && <span className="w-fit rounded-md bg-green-100 px-2 py-1 text-green-800">Accepted email sent</span>}
-                {selectedOrder.ready_email_sent_at && <span className="w-fit rounded-md bg-green-100 px-2 py-1 text-green-800">Ready email sent</span>}
               </div>
 
               <div className="grid gap-2">
@@ -1723,7 +1753,7 @@ export function AdminDashboard() {
                         const nextStatus = event.target.value as OrderStatus;
                         if (nextStatus === "accepted" && !isScheduledPickup(selectedOrder)) { setAcceptingOrder(selectedOrder.order_number); return; }
                         updateStatus(selectedOrder.order_number, nextStatus);
-                        if (nextStatus === "picked_up" || nextStatus === "completed" || nextStatus === "cancelled") setSelectedOrderNumber(null);
+                        if (nextStatus === "picked_up") setSelectedOrderNumber(null);
                       }}
                       disabled={updatingOrders.has(selectedOrder.order_number)}
                       className="focus-ring h-11 rounded-md border border-china-gold/70 bg-white px-2 text-sm font-bold disabled:opacity-60"

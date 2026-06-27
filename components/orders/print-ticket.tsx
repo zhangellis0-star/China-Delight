@@ -163,9 +163,9 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
           }
         }
       `}</style>
-      <button onClick={() => window.print()} className="no-print mb-6 rounded-md bg-china-red px-5 py-3 font-black text-white">
-        Print ticket
-      </button>
+      <p className="no-print mb-6 rounded-md border border-china-gold bg-china-gold/10 px-5 py-3 text-sm font-black text-stone-800">
+        Kitchen tickets print from the China Delight Admin Printer tablet app.
+      </p>
       <div className="receipt-box border-2 border-black p-5">
         <h1 className="text-center text-2xl font-black print:text-[18pt]">China Delight</h1>
         <p className="mt-1 text-center text-xs font-bold print:text-[9pt]">{restaurant.phone}</p>

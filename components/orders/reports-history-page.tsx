@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Download, Printer, RefreshCw } from "lucide-react";
+import { orderStatusLabel } from "@/lib/order-status";
 import { formatPrice } from "@/lib/pricing";
-import type { OrderStatus, PaymentMethod, PaymentStatus } from "@/types";
+import type { PaymentMethod, PaymentStatus } from "@/types";
 
 type DailyReportSummaryView = {
   totalOrders: number;
-  cancelledOrders: number;
   foodSales: number;
   discounts: number;
   tax: number;
@@ -30,7 +30,7 @@ type DailyReportDetail = {
     timeLabel: string;
     customerName: string;
     customerPhone: string;
-    status: OrderStatus;
+    status: string;
     paymentMethod: PaymentMethod | string;
     paymentStatus?: PaymentStatus | null;
     subtotal: number;
@@ -62,11 +62,6 @@ function paymentLabel(method?: PaymentMethod | string, status?: PaymentStatus | 
   return "Stripe pending";
 }
 
-function statusLabel(status: OrderStatus) {
-  if (status === "picked_up") return "Picked up";
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
@@ -79,7 +74,7 @@ function downloadReportCsv(report: DailyReportDetail) {
       order.timeLabel,
       order.customerName,
       order.customerPhone,
-      statusLabel(order.status),
+      orderStatusLabel(order.status),
       paymentLabel(order.paymentMethod, order.paymentStatus),
       order.subtotal,
       order.discount,
@@ -252,7 +247,6 @@ export function ReportsHistoryPage() {
                 <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold sm:grid-cols-3 lg:grid-cols-5">
                   {[
                     ["Total orders", report.summary.totalOrders],
-                    ["Cancelled", report.summary.cancelledOrders],
                     ["Total sales", formatPrice(report.summary.grandTotal)],
                     ["Food sales", formatPrice(report.summary.foodSales)],
                     ["Discounts", formatPrice(report.summary.discounts)],
@@ -285,7 +279,7 @@ export function ReportsHistoryPage() {
                           <div className="min-w-0">
                             <p className="font-black text-china-red">#{order.orderNumber} <span className="text-stone-900">{order.timeLabel}</span></p>
                             <p className="break-words text-sm font-bold text-stone-800">{order.customerName} / {order.customerPhone}</p>
-                            <p className="text-xs font-bold text-stone-600">{paymentLabel(order.paymentMethod, order.paymentStatus)} / {statusLabel(order.status)}</p>
+                            <p className="text-xs font-bold text-stone-600">{paymentLabel(order.paymentMethod, order.paymentStatus)} / {orderStatusLabel(order.status)}</p>
                           </div>
                           <p className="text-right text-lg font-black">{formatPrice(order.total)}</p>
                         </div>

@@ -248,11 +248,21 @@ class MainActivity : Activity() {
         // Invoked on the WebView's binder thread (not the UI thread).
         @JavascriptInterface
         fun printOrder(orderNumber: String) {
+            printOrderInternal(orderNumber, null)
+        }
+
+        @JavascriptInterface
+        fun printOrderWithRequest(orderNumber: String, requestId: String) {
+            printOrderInternal(orderNumber, requestId)
+        }
+
+        private fun printOrderInternal(orderNumber: String, requestId: String?) {
             val trimmed = orderNumber.trim()
             if (!orderNumberRegex.matches(trimmed)) {
                 runOnUiThread {
                     setWebStatus("No valid order number found on that card.")
                     toast("No order number selected")
+                    notifyPrintResult(requestId, trimmed, false, "No valid order number found on that card.")
                 }
                 return
             }
@@ -264,15 +274,28 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         setWebStatus("Printed $trimmed successfully.")
                         toast("Printed $trimmed")
+                        notifyPrintResult(requestId, trimmed, true, "Printed through tablet bridge.")
                     }
                 } catch (error: Exception) {
                     runOnUiThread {
                         setWebStatus("Print failed for $trimmed: ${error.message}")
                         toast("Print failed: ${error.message}")
+                        notifyPrintResult(requestId, trimmed, false, error.message ?: "Print failed.")
                     }
                 }
             }.start()
         }
+    }
+
+    private fun notifyPrintResult(requestId: String?, orderNumber: String, ok: Boolean, message: String) {
+        if (requestId.isNullOrBlank()) return
+        val detail = JSONObject()
+            .put("requestId", requestId)
+            .put("orderNumber", orderNumber)
+            .put("ok", ok)
+            .put("message", message)
+        val script = "window.dispatchEvent(new CustomEvent('cd-bridge-print-result', { detail: ${detail.toString()} }));"
+        webView.evaluateJavascript(script, null)
     }
 
     /** JS injected into the admin page: adds a "Print to Epson" button to each order card. */

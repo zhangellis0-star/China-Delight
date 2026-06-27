@@ -1,4 +1,5 @@
 import { cmd, feed, lineWidth, moneyLine, text } from "@/lib/escpos";
+import { normalizeOrderStatus } from "@/lib/order-status";
 
 // End-of-day summary. Test orders (order_number starting "TEST") are excluded from all
 // financial totals so they never inflate the real numbers.
@@ -25,15 +26,10 @@ export type DailyReportOrder = {
 
 export type DailyReportSummary = {
   totalOrders: number;
-  cancelledOrders: number;
   statusCounts: {
     new: number;
     accepted: number;
-    preparing: number;
-    ready: number;
     picked_up: number;
-    completed: number;
-    cancelled: number;
   };
   itemSummary: Array<{
     name: string;
@@ -55,7 +51,7 @@ function isTest(order: DailyReportOrder) {
 
 export function summarizeDailyOrders(orders: DailyReportOrder[]): DailyReportSummary {
   const real = orders.filter((order) => !isTest(order));
-  const counted = real.filter((order) => order.status !== "cancelled");
+  const counted = real;
   const num = (value: number | null | undefined) => Number(value || 0);
   const itemRows = new Map<string, { name: string; quantity: number }>();
 
@@ -72,15 +68,10 @@ export function summarizeDailyOrders(orders: DailyReportOrder[]): DailyReportSum
 
   return {
     totalOrders: real.length,
-    cancelledOrders: real.filter((order) => order.status === "cancelled").length,
     statusCounts: {
-      new: real.filter((order) => order.status === "new").length,
-      accepted: real.filter((order) => order.status === "accepted").length,
-      preparing: real.filter((order) => order.status === "preparing").length,
-      ready: real.filter((order) => order.status === "ready").length,
-      picked_up: real.filter((order) => order.status === "picked_up").length,
-      completed: real.filter((order) => order.status === "completed").length,
-      cancelled: real.filter((order) => order.status === "cancelled").length
+      new: real.filter((order) => normalizeOrderStatus(order.status) === "new").length,
+      accepted: real.filter((order) => normalizeOrderStatus(order.status) === "accepted").length,
+      picked_up: real.filter((order) => normalizeOrderStatus(order.status) === "picked_up").length
     },
     itemSummary: Array.from(itemRows.values()).sort((left, right) => right.quantity - left.quantity || left.name.localeCompare(right.name)),
     foodSales: counted.reduce((sum, order) => sum + num(order.subtotal), 0),
@@ -146,11 +137,7 @@ export function escposDailyReport(summary: DailyReportSummary, opts: { dateLabel
   chunks.push(cmd.boldOff);
   line(countLine("New", summary.statusCounts.new));
   line(countLine("Accepted", summary.statusCounts.accepted));
-  line(countLine("Preparing", summary.statusCounts.preparing));
-  line(countLine("Ready", summary.statusCounts.ready));
-  line(countLine("Completed", summary.statusCounts.completed));
   line(countLine("Picked up", summary.statusCounts.picked_up));
-  line(countLine("Cancelled", summary.statusCounts.cancelled));
 
   if (summary.itemSummary.length) {
     line(divider);

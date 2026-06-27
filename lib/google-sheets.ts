@@ -193,7 +193,7 @@ async function appendOrder(input: GoogleSheetsOrderSyncInput, signal?: AbortSign
   await ensureHeaders(config.spreadsheetId, config.sheetName, token, signal);
 
   const isTestOrder = input.orderNumber.toUpperCase().startsWith("TEST");
-  const isCancelled = input.status === "cancelled";
+  const isCancelled = false;
   const total = Number(input.totals.total || 0);
   const row = [
     easternDateTime(input.createdAt),

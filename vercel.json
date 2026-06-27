@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/admin/auto-pickup",
+      "schedule": "59 3 * * *"
+    },
+    {
+      "path": "/api/admin/auto-pickup",
+      "schedule": "59 4 * * *"
+    }
+  ]
+}

@@ -116,7 +116,7 @@ export type AppliedPromo = {
   discountAmount: number;
 };
 
-export type OrderStatus = "new" | "accepted" | "preparing" | "ready" | "picked_up" | "completed" | "cancelled";
+export type OrderStatus = "new" | "accepted" | "picked_up";
 export type PaymentMethod = "stripe" | "pay_at_pickup";
 export type PaymentStatus = "unpaid" | "paid" | "failed" | "refunded";
 export type PickupTimeType = "asap" | "scheduled";

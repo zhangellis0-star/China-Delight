@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { Search } from "lucide-react";
+import { normalizeOrderStatus, orderStatusLabel } from "@/lib/order-status";
 import { ASAP_PICKUP_NOTE, READY_PENDING_TEXT, formatPickupDateTime } from "@/lib/order-rules";
 import { formatPrice } from "@/lib/pricing";
-import type { OrderStatus, PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
+import type { PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
 
 type LookupOrder = {
   orderNumber: string;
-  status: OrderStatus;
+  status: string;
   paymentMethod?: PaymentMethod;
   paymentStatus?: PaymentStatus;
   pickupTimeType?: PickupTimeType;
@@ -17,16 +18,6 @@ type LookupOrder = {
   promoCode?: string | null;
   discountAmount?: number | null;
   total?: number;
-};
-
-const statusLabels: Record<OrderStatus, string> = {
-  new: "New",
-  accepted: "Accepted",
-  preparing: "Preparing",
-  ready: "Ready",
-  picked_up: "Picked up",
-  completed: "Completed",
-  cancelled: "Cancelled"
 };
 
 export default function OrderStatusPage() {
@@ -58,6 +49,7 @@ export default function OrderStatusPage() {
 
   const isScheduled = order?.pickupTimeType === "scheduled" && Boolean(order.scheduledPickupTime);
   const pickupLabel = isScheduled && order?.scheduledPickupTime ? formatPickupDateTime(order.scheduledPickupTime) : "ASAP";
+  const normalizedStatus = normalizeOrderStatus(order?.status);
 
   return (
     <section className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
@@ -84,8 +76,8 @@ export default function OrderStatusPage() {
       {order && (
         <div className="mt-6 rounded-lg border border-stone-200 bg-white p-5 shadow-warm">
           <p className="text-sm font-black uppercase tracking-[0.16em] text-china-red">{order.orderNumber}</p>
-          <p className="mt-2 text-3xl font-black">{statusLabels[order.status]}</p>
-          {order.status === "picked_up" && <p className="mt-3 rounded-md bg-green-50 px-3 py-2 font-bold text-green-800">Picked up. Thank you for ordering from China Delight.</p>}
+          <p className="mt-2 text-3xl font-black">{orderStatusLabel(order.status)}</p>
+          {normalizedStatus === "picked_up" && <p className="mt-3 rounded-md bg-green-50 px-3 py-2 font-bold text-green-800">Picked up. Thank you for ordering from China Delight.</p>}
           <div className="mt-4 grid gap-2 text-stone-700">
             <p>
               <strong>Pickup:</strong> {pickupLabel}

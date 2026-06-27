@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAdminCookieName, isValidAdminSession } from "@/lib/admin-auth";
-import { sendOrderAcceptedEmail, sendOrderReadyEmail } from "@/lib/email";
+import { sendOrderAcceptedEmail } from "@/lib/email";
 import { updateOrderStatusInGoogleSheets } from "@/lib/google-sheets";
+import { editableOrderStatuses } from "@/lib/order-status";
 import { restaurant } from "@/lib/restaurant";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import type { OrderStatus } from "@/types";
@@ -225,6 +226,7 @@ export async function PATCH(request: Request) {
   }
 
   if (!("status" in body) || !body.status) return NextResponse.json({ error: "Missing status." }, { status: 400 });
+  if (!editableOrderStatuses.includes(body.status)) return NextResponse.json({ error: "Use status new, accepted, or picked_up." }, { status: 400 });
 
   const now = new Date().toISOString();
   const update: Record<string, string | number | null> = { status: body.status, updated_at: now };
@@ -252,10 +254,6 @@ export async function PATCH(request: Request) {
       update.estimated_ready_at = readyDate(minutes);
     }
   }
-  if (body.status === "ready") {
-    update.ready_at = now;
-  }
-
   const { data: updatedOrder, error } = await supabase
     .from("orders")
     .update(update)
@@ -271,7 +269,6 @@ export async function PATCH(request: Request) {
     updatedAt: new Date(now)
   });
 
-  let readyEmailSent = false;
   let acceptedEmailSent = false;
   if (body.status === "accepted" && updatedOrder && updatedOrder.estimated_ready_at && !updatedOrder.accepted_email_sent_at) {
     const emailResult = await sendOrderAcceptedEmail(updatedOrder);
@@ -292,24 +289,5 @@ export async function PATCH(request: Request) {
       });
     }
   }
-  if (body.status === "ready" && updatedOrder && !updatedOrder.ready_email_sent_at) {
-    const emailResult = await sendOrderReadyEmail(updatedOrder);
-    readyEmailSent = emailResult.sent;
-    const { error: emailUpdateError } = await supabase
-      .from("orders")
-      .update({
-        ready_email_sent_at: emailResult.sent ? new Date().toISOString() : null,
-        ready_email_error: emailResult.sent ? null : emailResult.error ?? null,
-        updated_at: new Date().toISOString()
-      })
-      .eq("order_number", body.orderNumber);
-    if (emailUpdateError) {
-      console.error("[orders] Ready email status update failed", {
-        orderNumber: body.orderNumber,
-        message: emailUpdateError.message,
-        code: emailUpdateError.code
-      });
-    }
-  }
-  return NextResponse.json({ ok: true, order: updatedOrder, readyEmailSent, acceptedEmailSent });
+  return NextResponse.json({ ok: true, order: updatedOrder, acceptedEmailSent });
 }
