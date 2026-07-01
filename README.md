@@ -21,6 +21,7 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 ADMIN_PASSWORD=
+CRON_SECRET=
 RESEND_API_KEY=
 ORDER_FROM_EMAIL=
 TELEGRAM_BOT_TOKEN=
@@ -34,7 +35,7 @@ NEXT_PUBLIC_TAX_RATE=0.0735
 NEXT_PUBLIC_PROCESSING_FEE_RATE=0.06
 ```
 
-Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, Resend email variables, Telegram variables for new-order notifications, Google Sheets variables if you want live sales sync, and tax/fee rates.
+Use the same variables in Vercel Project Settings -> Environment Variables. At minimum for production ordering, set `NEXT_PUBLIC_SITE_URL`, Supabase URL/keys, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD`, `CRON_SECRET`, Resend email variables, Telegram variables for new-order notifications, Google Sheets variables if you want live sales sync, and tax/fee rates.
 
 > Online ordering is **pay-at-pickup only** - there is no online card payment. Stripe and Twilio/SMS phone verification were removed; the related env vars are no longer read.
 
@@ -171,6 +172,8 @@ The app auto-creates the header row when the target tab is empty. Columns are:
 `Created Date/Time`, `Order Number`, `Customer Name`, `Customer Phone`, `Customer Email`, `Status`, `Payment Method`, `Payment Status`, `Pickup Type`, `Scheduled Pickup Time`, `Subtotal`, `Discount`, `Tax`, `Processing Fee`, `Tip`, `Total`, `4% Website Fee`, `Promo Code`, `Special Offer / Free Item`, `Item Count`, `Item Summary`, `Customer Notes`, `Test Order?`, `Cancelled?`, `Count Toward Sales?`
 
 `4% Website Fee` is calculated from the final customer total after discounts, tax, processing fee, and tip. Test orders are marked when the order number starts with `TEST`; cancelled orders and test orders are marked as not counting toward sales. Because rows are appended after checkout succeeds, a retry after a transient server/runtime interruption could append a duplicate row; use `Order Number` as the unique reference when reviewing the Sheet.
+
+Manual admin status changes and the 11:59 PM Eastern auto-pickup job update the existing row's `Status` cell by matching `Order Number`. They do not append another row during status sync. If the matching Sheet row cannot be found, the database status change still succeeds and the server logs the skipped Sheet update.
 
 ## Phone Number At Checkout
 
