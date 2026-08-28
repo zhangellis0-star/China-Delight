@@ -173,7 +173,13 @@ The app auto-creates the header row when the target tab is empty. Columns are:
 
 `4% Website Fee` is calculated from the final customer total after discounts, tax, processing fee, and tip. Test orders are marked when the order number starts with `TEST`; cancelled orders and test orders are marked as not counting toward sales. Because rows are appended after checkout succeeds, a retry after a transient server/runtime interruption could append a duplicate row; use `Order Number` as the unique reference when reviewing the Sheet.
 
-Manual admin status changes and the 11:59 PM Eastern auto-pickup job update the existing row's `Status` cell by matching `Order Number`. They do not append another row during status sync. If the matching Sheet row cannot be found, the database status change still succeeds and the server logs the skipped Sheet update.
+Manual admin status changes and the automatic end-of-day pickup job update the existing row's `Status` cell by matching `Order Number`. They do not append another row during status sync. If the matching Sheet row cannot be found, the database status change still succeeds and the server logs the skipped Sheet update.
+
+## Automatic End-of-Day Pickup
+
+Vercel calls `GET /api/admin/auto-pickup` once per day at `05:00 UTC`. Vercel Hobby may delay a daily cron within the following hour, so this becomes 12:00-12:59 AM Eastern Standard Time or 1:00-1:59 AM Eastern Daylight Time. The route intentionally treats either window as the end of the previous New York business day.
+
+The job changes only that business day's active `new` and `accepted` orders to `picked_up`. A scheduled order whose pickup date is later remains active. Set `CRON_SECRET` in Vercel Production environment variables; Vercel sends it as the bearer token used by the route. The update is safe to retry because already-picked-up orders are excluded.
 
 ## Phone Number At Checkout
 
