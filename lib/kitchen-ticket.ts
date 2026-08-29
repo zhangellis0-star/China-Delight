@@ -18,6 +18,16 @@ function defaultSpiceLevel(menuItemId?: string | null): string {
   return menuItem?.spicy ? "Hot" : "None";
 }
 
+// Regular sentence case (lowercase with only the first letter capitalized) instead of shouting
+// in all caps, for the item names/notes/customizations that make up the order itself.
+function sentenceCase(value: string): string {
+  const lower = value.toLowerCase();
+  const match = lower.match(/[a-z]/);
+  if (!match || match.index === undefined) return lower;
+  const i = match.index;
+  return lower.slice(0, i) + lower[i].toUpperCase() + lower.slice(i + 1);
+}
+
 export type PrintOrder = {
   order_number: string;
   customer_name: string;
@@ -176,7 +186,7 @@ export function escposTicket(order: PrintOrder) {
     line(doubleDivider);
     chunks.push(cmd.boldOn);
     line("CUSTOMER NOTES:");
-    wrapped(text(order.customer_notes).toUpperCase());
+    wrapped(sentenceCase(text(order.customer_notes)));
     chunks.push(cmd.boldOff);
     line(doubleDivider);
   }
@@ -186,9 +196,9 @@ export function escposTicket(order: PrintOrder) {
   // "CUSTOMER CHANGED" block for anything the customer customized (incl. special instructions).
   // A default spice level the customer never changed is not printed at all.
   for (const item of order.order_items ?? []) {
-    const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${item.item_name}`;
+    const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${sentenceCase(item.item_name)}`;
     chunks.push(cmd.boldOn);
-    wrapped(itemTitle.toUpperCase());
+    wrapped(itemTitle);
     chunks.push(cmd.boldOff);
     line(moneyLine("", Number(item.unit_price || 0) * Number(item.quantity || 0)));
 
@@ -209,10 +219,10 @@ export function escposTicket(order: PrintOrder) {
       chunks.push(cmd.boldOn);
       line("SPECIAL INSTRUCTIONS:");
       for (const change of customLines) {
-        wrapped(`- ${change.toUpperCase()}`, 2);
+        wrapped(`- ${sentenceCase(change)}`, 2);
       }
       if (notes) {
-        wrapped(`- NOTE: ${notes.toUpperCase()}`, 2);
+        wrapped(`- Note: ${sentenceCase(notes)}`, 2);
       }
       chunks.push(cmd.boldOff);
     }
