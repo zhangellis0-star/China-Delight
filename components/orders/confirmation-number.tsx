@@ -139,6 +139,7 @@ export function ConfirmationNumber() {
                 subtotal: supabaseOrder.subtotal,
                 discount: supabaseOrder.discount_amount,
                 tax: supabaseOrder.tax,
+                processingFee: supabaseOrder.processing_fee,
                 tip: supabaseOrder.tip_amount,
                 total: supabaseOrder.total
               });
@@ -199,6 +200,7 @@ export function ConfirmationNumber() {
                 subtotal: lastOrder.totals.subtotal,
                 discount: lastOrder.totals.discount,
                 tax: lastOrder.totals.tax,
+                processingFee: lastOrder.totals.processingFee,
                 tip: lastOrder.totals.tip,
                 total: lastOrder.totals.total
               });

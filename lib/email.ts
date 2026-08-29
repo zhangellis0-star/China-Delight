@@ -211,6 +211,7 @@ export async function sendOrderConfirmationEmail(order: EmailOrder) {
     subtotal: order.subtotal,
     discount: order.discount_amount,
     tax: order.tax,
+    processingFee: order.processing_fee,
     tip: order.tip_amount,
     total: order.total
   });

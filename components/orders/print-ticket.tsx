@@ -118,6 +118,7 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
     subtotal: order.subtotal,
     discount: order.discount_amount,
     tax: order.tax,
+    processingFee: order.processing_fee,
     tip: order.tip_amount,
     total: order.total
   });

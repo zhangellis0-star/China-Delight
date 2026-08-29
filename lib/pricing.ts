@@ -49,17 +49,18 @@ export function calculateCart(items: CartItem[], tip = 0, discountAmount = 0) {
 
 // China Delight does not take payment online; customers pay at the restaurant, in cash or by
 // card. Card Price is the existing total (already includes tax + the card processing fee).
-// Cash Price re-derives from the same post-discount merchandise subtotal: 5% off before tax,
-// tax recomputed on that discounted amount, plus tip — no processing fee, since that cost is
-// never charged to cash customers. This is the single source of truth for both prices; every
-// display surface (checkout, confirmation, email, receipt, admin) calls this instead of
-// re-deriving the discount or tax itself.
+// Cash Price re-derives from the same post-discount merchandise subtotal: 5% off before tax
+// (tax recomputed on that discounted amount), and the processing fee is also reduced 5% and
+// added back in, plus tip. This is the single source of truth for both prices; every display
+// surface (checkout, confirmation, email, receipt, admin) calls this instead of re-deriving the
+// discount, tax, or fee itself.
 export const CASH_DISCOUNT_RATE = 0.05;
 
 export type CashDiscountPricingInput = {
   subtotal: number;
   discount?: number | null;
   tax: number;
+  processingFee?: number | null;
   tip?: number | null;
   total: number;
 };
@@ -67,24 +68,30 @@ export type CashDiscountPricingInput = {
 export type CashDiscountPricing = {
   cardSubtotal: number;
   cardTax: number;
+  cardProcessingFee: number;
   cardTotal: number;
   cashSubtotal: number;
   cashTax: number;
+  cashProcessingFee: number;
   cashTotal: number;
 };
 
 export function calculateCashDiscountPricing(input: CashDiscountPricingInput): CashDiscountPricing {
   const cardSubtotal = Math.max(0, input.subtotal - Number(input.discount ?? 0));
+  const cardProcessingFee = Number(input.processingFee ?? 0);
   const tip = Number(input.tip ?? 0);
   const cashSubtotal = Number((cardSubtotal * (1 - CASH_DISCOUNT_RATE)).toFixed(2));
   const cashTax = Number((cashSubtotal * restaurant.taxRate).toFixed(2));
-  const cashTotal = Number((cashSubtotal + cashTax + tip).toFixed(2));
+  const cashProcessingFee = Number((cardProcessingFee * (1 - CASH_DISCOUNT_RATE)).toFixed(2));
+  const cashTotal = Number((cashSubtotal + cashTax + cashProcessingFee + tip).toFixed(2));
   return {
     cardSubtotal,
     cardTax: input.tax,
+    cardProcessingFee,
     cardTotal: input.total,
     cashSubtotal,
     cashTax,
+    cashProcessingFee,
     cashTotal
   };
 }

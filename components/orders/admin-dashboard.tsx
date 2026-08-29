@@ -1722,6 +1722,7 @@ export function AdminDashboard() {
                     subtotal: selectedOrder.subtotal,
                     discount: selectedOrder.discount_amount,
                     tax: selectedOrder.tax,
+                    processingFee: selectedOrder.processing_fee,
                     tip: selectedOrder.tip_amount,
                     total: selectedOrder.total
                   });
