@@ -2,10 +2,10 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 const cookieName = "china_delight_admin";
 
-// Sessions are valid for 12 hours. The expiry timestamp lives inside the signed
+// Sessions are valid for 30 days. The expiry timestamp lives inside the signed
 // token, so a stolen cookie stops working after this window and the value cannot
 // be extended without ADMIN_PASSWORD.
-export const adminSessionMaxAgeSeconds = 60 * 60 * 12;
+export const adminSessionMaxAgeSeconds = 60 * 60 * 24 * 30;
 
 export function getAdminCookieName() {
   return cookieName;
