@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { customizationText } from "@/lib/order-display";
 import { ASAP_PICKUP_NOTE, READY_PENDING_TEXT, confirmedReadyTime, formatPickupDateTime } from "@/lib/order-rules";
-import { formatPrice } from "@/lib/pricing";
+import { calculateCashDiscountPricing, formatPrice } from "@/lib/pricing";
 import { restaurant } from "@/lib/restaurant";
 import { useCart } from "@/components/cart/cart-provider";
 import type { CartItem, CheckoutCustomer, PaymentStatus } from "@/types";
@@ -134,7 +134,21 @@ export function ConfirmationNumber() {
             <p>Tax: {formatPrice(supabaseOrder.tax)}</p>
             <p>Processing fee: {formatPrice(supabaseOrder.processing_fee ?? 0)}</p>
             <p>Tip: {formatPrice(supabaseOrder.tip_amount ?? 0)}</p>
-            <p className="text-2xl font-black">Total: {formatPrice(supabaseOrder.total)}</p>
+            {(() => {
+              const pricing = calculateCashDiscountPricing({
+                subtotal: supabaseOrder.subtotal,
+                discount: supabaseOrder.discount_amount,
+                tax: supabaseOrder.tax,
+                tip: supabaseOrder.tip_amount,
+                total: supabaseOrder.total
+              });
+              return (
+                <>
+                  <p className="text-xl font-black">Card Price: {formatPrice(pricing.cardTotal)}</p>
+                  <p className="text-xl font-black text-china-red">Cash Price (5% Off): {formatPrice(pricing.cashTotal)}</p>
+                </>
+              );
+            })()}
           </div>
           <div className="rounded-md bg-red-50 p-3 text-sm font-bold text-china-red">
             Call us if you need to change your order: {restaurant.phone}. {restaurant.address}.
@@ -180,7 +194,21 @@ export function ConfirmationNumber() {
             <p>Tax: {formatPrice(lastOrder.totals.tax)}</p>
             <p>Processing fee: {formatPrice(lastOrder.totals.processingFee ?? 0)}</p>
             <p>Tip: {formatPrice(lastOrder.totals.tip ?? 0)}</p>
-            <p className="text-2xl font-black">Total: {formatPrice(lastOrder.totals.total)}</p>
+            {(() => {
+              const pricing = calculateCashDiscountPricing({
+                subtotal: lastOrder.totals.subtotal,
+                discount: lastOrder.totals.discount,
+                tax: lastOrder.totals.tax,
+                tip: lastOrder.totals.tip,
+                total: lastOrder.totals.total
+              });
+              return (
+                <>
+                  <p className="text-xl font-black">Card Price: {formatPrice(pricing.cardTotal)}</p>
+                  <p className="text-xl font-black text-china-red">Cash Price (5% Off): {formatPrice(pricing.cashTotal)}</p>
+                </>
+              );
+            })()}
           </div>
           <div className="rounded-md bg-red-50 p-3 text-sm font-bold text-china-red">
             Call us if you need to change your order: {restaurant.phone}. {restaurant.address}.

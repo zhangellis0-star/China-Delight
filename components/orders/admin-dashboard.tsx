@@ -7,7 +7,7 @@ import { Copy, Edit3, Menu, Phone, Plus, Printer, RefreshCw, Search, Volume2, Vo
 import { customizationText } from "@/lib/order-display";
 import { activeOrderStatuses, editableOrderStatuses, finalOrderStatuses, normalizeOrderStatus, orderStatusLabel } from "@/lib/order-status";
 import { comboIncludedItems, confirmedReadyTime, formatPickupDateTime, isComboItem, isLunchItem } from "@/lib/order-rules";
-import { defaultSize, formatPrice, getItemPrice, hasReviewPrice } from "@/lib/pricing";
+import { calculateCashDiscountPricing, defaultSize, formatPrice, getItemPrice, hasReviewPrice } from "@/lib/pricing";
 import { menuItems } from "@/data/menu";
 import { restaurant } from "@/lib/restaurant";
 import { PromoManager } from "@/components/orders/promo-manager";
@@ -1717,7 +1717,21 @@ export function AdminDashboard() {
                 <p className="flex justify-between"><span>Tax</span><span>{formatPrice(selectedOrder.tax)}</span></p>
                 <p className="flex justify-between"><span>Processing fee</span><span>{formatPrice(Number(selectedOrder.processing_fee ?? 0))}</span></p>
                 <p className="flex justify-between"><span>Tip</span><span>{formatPrice(Number(selectedOrder.tip_amount ?? 0))}</span></p>
-                <p className="mt-1 flex justify-between border-t border-stone-200 pt-1 text-base font-black"><span>Total</span><span>{formatPrice(selectedOrder.total)}</span></p>
+                {(() => {
+                  const pricing = calculateCashDiscountPricing({
+                    subtotal: selectedOrder.subtotal,
+                    discount: selectedOrder.discount_amount,
+                    tax: selectedOrder.tax,
+                    tip: selectedOrder.tip_amount,
+                    total: selectedOrder.total
+                  });
+                  return (
+                    <>
+                      <p className="mt-1 flex justify-between border-t border-stone-200 pt-1 text-base font-black"><span>Card</span><span>{formatPrice(pricing.cardTotal)}</span></p>
+                      <p className="flex justify-between text-base font-black text-china-red"><span>Cash (5% Off)</span><span>{formatPrice(pricing.cashTotal)}</span></p>
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="grid gap-1 text-[11px] font-black">

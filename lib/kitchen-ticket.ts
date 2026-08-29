@@ -1,6 +1,7 @@
 import { menuItems } from "@/data/menu";
 import { cmd, feed, lineWidth, moneyLine, text, wrapLine } from "@/lib/escpos";
 import { formatPickupDateTime } from "@/lib/order-rules";
+import { calculateCashDiscountPricing } from "@/lib/pricing";
 import { restaurant } from "@/lib/restaurant";
 
 // Tax/processing-fee percentages shown on the ticket, e.g. "7.35" and "6" (matches AirPrint).
@@ -226,10 +227,19 @@ export function escposTicket(order: PrintOrder) {
   line(moneyLine(`Tax (${taxPercent}%)`, Number(order.tax || 0)));
   line(moneyLine(`Processing fee (${processingFeePercent}%)`, Number(order.processing_fee ?? 0)));
   line(moneyLine("Tip", Number(order.tip_amount ?? 0)));
-  line(doubleDivider);
-  chunks.push(cmd.boldOn, cmd.sizeTall);
-  line(moneyLine("TOTAL", Number(order.total || 0)));
-  chunks.push(cmd.sizeNormal, cmd.boldOff);
+  line(divider);
+  const pricing = calculateCashDiscountPricing({
+    subtotal: order.subtotal,
+    discount: order.discount_amount,
+    tax: order.tax,
+    tip: order.tip_amount,
+    total: order.total
+  });
+  chunks.push(cmd.boldOn);
+  line(moneyLine("CARD PRICE", pricing.cardTotal));
+  line(moneyLine("CASH PRICE (5%)", pricing.cashTotal));
+  chunks.push(cmd.boldOff);
+  line(divider);
 
   chunks.push(feed(4), cmd.cut);
   return Buffer.concat(chunks);

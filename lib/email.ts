@@ -1,6 +1,6 @@
 import { customizationText } from "@/lib/order-display";
 import { CONFIRMATION_PENDING_EMAIL_NOTE, estimatedPickupWindow, formatPickupDateTime } from "@/lib/order-rules";
-import { formatPrice } from "@/lib/pricing";
+import { calculateCashDiscountPricing, formatPrice } from "@/lib/pricing";
 import { restaurant } from "@/lib/restaurant";
 import type { PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
 
@@ -207,6 +207,13 @@ export async function sendTestEmail(to: string) {
 export async function sendOrderConfirmationEmail(order: EmailOrder) {
   if (!order.customer_email) return { sent: false, skipped: true, error: "Order has no customer email." };
   const lookupUrl = `${siteUrl()}/order-status`;
+  const pricing = calculateCashDiscountPricing({
+    subtotal: order.subtotal,
+    discount: order.discount_amount,
+    tax: order.tax,
+    tip: order.tip_amount,
+    total: order.total
+  });
   const text = `China Delight order confirmation
 
 Order number: ${order.order_number}
@@ -223,7 +230,8 @@ Subtotal: ${formatPrice(order.subtotal)}
 ${Number(order.discount_amount ?? 0) > 0 ? `Promo discount${order.promo_code ? ` (${order.promo_code})` : ""}: -${formatPrice(Number(order.discount_amount))}\n` : ""}Tax: ${formatPrice(order.tax)}
 Processing fee: ${formatPrice(order.processing_fee ?? 0)}
 Tip: ${formatPrice(order.tip_amount ?? 0)}
-Total: ${formatPrice(order.total)}
+CARD PRICE: ${formatPrice(pricing.cardTotal)}
+CASH PRICE (5% OFF): ${formatPrice(pricing.cashTotal)}
 
 Check order status: ${lookupUrl}
 Restaurant phone: ${restaurant.phone}
@@ -241,7 +249,7 @@ Call us if you need to change your order.`;
     <h2>Items</h2>
     <ul>${orderRowsHtml(order)}</ul>
     <p>Subtotal: ${formatPrice(order.subtotal)}<br>${Number(order.discount_amount ?? 0) > 0 ? `Promo discount${order.promo_code ? ` (${escapeHtml(order.promo_code)})` : ""}: -${formatPrice(Number(order.discount_amount))}<br>` : ""}Tax: ${formatPrice(order.tax)}<br>Processing fee: ${formatPrice(order.processing_fee ?? 0)}<br>Tip: ${formatPrice(order.tip_amount ?? 0)}</p>
-    <p style="font-size:20px"><strong>Total: ${formatPrice(order.total)}</strong></p>
+    <p style="font-size:18px"><strong>CARD PRICE: ${formatPrice(pricing.cardTotal)}</strong><br><strong>CASH PRICE (5% OFF): ${formatPrice(pricing.cashTotal)}</strong></p>
     <p><a href="${lookupUrl}">Check your order status</a></p>
     <p><strong>${escapeHtml(restaurant.phone)}</strong><br>${escapeHtml(restaurant.address)}</p>
     <p>Call us if you need to change your order.</p>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { customizationParts } from "@/lib/order-display";
 import { formatPickupDateTime } from "@/lib/order-rules";
-import { formatPrice } from "@/lib/pricing";
+import { calculateCashDiscountPricing, formatPrice } from "@/lib/pricing";
 import { restaurant } from "@/lib/restaurant";
 import type { CartItem, OrderStatus } from "@/types";
 
@@ -114,6 +114,13 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
   const placedAt = order.created_at ? formatPickupDateTime(order.created_at) : "";
   const scheduledPickup = scheduledPickupText(order);
   const readyPickup = !scheduledPickup ? readyPickupText(order) : null;
+  const pricing = calculateCashDiscountPricing({
+    subtotal: order.subtotal,
+    discount: order.discount_amount,
+    tax: order.tax,
+    tip: order.tip_amount,
+    total: order.total
+  });
 
   return (
     <section className="receipt-ticket mx-auto max-w-2xl bg-white px-4 py-8 text-black print:p-0">
@@ -236,7 +243,8 @@ export function PrintTicket({ orderNumber }: { orderNumber: string }) {
           <p className="receipt-line">Tax ({taxPercent}%): {formatPrice(order.tax)}</p>
           <p className="receipt-line">Processing fee ({processingFeePercent}%): {formatPrice(order.processing_fee ?? 0)}</p>
           <p className="receipt-line">Tip: {formatPrice(order.tip_amount ?? 0)}</p>
-          <p className="receipt-line text-2xl font-black print:text-[17pt]">Total: {formatPrice(order.total)}</p>
+          <p className="receipt-line text-xl font-black print:text-[15pt]">CARD PRICE: {formatPrice(pricing.cardTotal)}</p>
+          <p className="receipt-line text-xl font-black print:text-[15pt]">CASH PRICE (5%): {formatPrice(pricing.cashTotal)}</p>
         </div>
       </div>
     </section>

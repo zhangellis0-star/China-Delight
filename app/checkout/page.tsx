@@ -17,7 +17,7 @@ import {
   nextOpeningLabel,
   validateScheduledPickup
 } from "@/lib/order-rules";
-import { calculateCart, formatPrice } from "@/lib/pricing";
+import { calculateCart, calculateCashDiscountPricing, formatPrice } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode } from "@/lib/promo";
 import { buildFreeLine, computeOffer, offerSummary } from "@/lib/offer-logic";
 import type { PublicSpecialOffer } from "@/lib/offer-logic";
@@ -93,6 +93,7 @@ export default function CheckoutPage() {
         ? 0
         : baseSubtotal * (Number(tipChoice) / 100);
   const totals = calculateCart(items, tipAmount, discountAmount);
+  const cashDiscountPricing = calculateCashDiscountPricing(totals);
   const orderingOpen = settings?.orderingAllowed ?? isRestaurantOpen();
   const [loading, setLoading] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -671,9 +672,13 @@ export default function CheckoutPage() {
               <span>Tip</span>
               <span>{formatPrice(totals.tip)}</span>
             </div>
-            <div className="flex justify-between gap-3 text-xl font-black sm:text-2xl">
-              <span>Total</span>
-              <span>{formatPrice(totals.total)}</span>
+            <div className="flex justify-between gap-3 text-lg font-black sm:text-xl">
+              <span>Card Price</span>
+              <span>{formatPrice(cashDiscountPricing.cardTotal)}</span>
+            </div>
+            <div className="flex justify-between gap-3 text-lg font-black text-china-red sm:text-xl">
+              <span>Cash Price (5% Off)</span>
+              <span>{formatPrice(cashDiscountPricing.cashTotal)}</span>
             </div>
           </div>
 
