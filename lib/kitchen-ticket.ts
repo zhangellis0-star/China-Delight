@@ -247,8 +247,8 @@ export function escposTicket(order: PrintOrder) {
     total: order.total
   });
   chunks.push(cmd.boldOn);
-  line(moneyLine("CARD PRICE", pricing.cardTotal));
   line(moneyLine("CASH PRICE (5%)", pricing.cashTotal));
+  line(moneyLine("CARD PRICE", pricing.cardTotal));
   chunks.push(cmd.boldOff);
   line(divider);
 
