@@ -10,6 +10,9 @@ export const printerHost = process.env.PRINTER_IP?.trim() || "192.168.1.172";
 export const printerPort = Number(process.env.PRINTER_PORT) || 9100;
 // 80mm thermal paper fits 48 Font-A columns; use the full width so the ticket fills the paper.
 export const lineWidth = 48;
+// Same 80mm paper in raster dots: Font A is 12 dots/column at normal size (48 * 12 = 576),
+// which matches the standard print width for this printer class. Used for rasterized CJK lines.
+export const printWidthDots = 576;
 
 export const printerLabel = `Epson TCP ${printerHost}:${printerPort}`;
 
@@ -66,6 +69,33 @@ export const cmd = {
 
 export function feed(lines: number) {
   return Buffer.from([ESC, 0x64, Math.max(0, lines)]); // ESC d n: print and feed n lines.
+}
+
+// GS v 0: print a raster bit image. `bitmap` is `widthPx * heightPx` bytes, row-major, one byte
+// per pixel (truthy = black/print). This is the universal ESC/POS fallback for glyphs the
+// printer's built-in fonts cannot render (e.g. CJK on a printer without a Chinese font mask) —
+// every ESC/POS-compliant printer supports raster images, unlike font-specific character modes.
+export function rasterImageCommand(bitmap: ArrayLike<number>, widthPx: number, heightPx: number) {
+  const bytesPerRow = Math.ceil(widthPx / 8);
+  const data = Buffer.alloc(bytesPerRow * heightPx);
+  for (let y = 0; y < heightPx; y++) {
+    for (let x = 0; x < widthPx; x++) {
+      if (bitmap[y * widthPx + x]) {
+        data[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7);
+      }
+    }
+  }
+  const header = Buffer.from([
+    GS,
+    0x76,
+    0x30,
+    0x00, // m = 0: normal mode
+    bytesPerRow & 0xff,
+    (bytesPerRow >> 8) & 0xff,
+    heightPx & 0xff,
+    (heightPx >> 8) & 0xff
+  ]);
+  return Buffer.concat([header, data]);
 }
 
 export function sendToPrinter(payload: Buffer) {

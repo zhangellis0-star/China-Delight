@@ -1,4 +1,5 @@
 import { menuItems } from "@/data/menu";
+import { rasterizeChineseLine } from "@/lib/cjk-render";
 import { cmd, feed, lineWidth, moneyLine, text, wrapLine } from "@/lib/escpos";
 import { formatPickupDateTime } from "@/lib/order-rules";
 import { calculateCashDiscountPricing } from "@/lib/pricing";
@@ -196,6 +197,13 @@ export function escposTicket(order: PrintOrder) {
   // "CUSTOMER CHANGED" block for anything the customer customized (incl. special instructions).
   // A default spice level the customer never changed is not printed at all.
   for (const item of order.order_items ?? []) {
+    // Chinese name (rasterized — see lib/cjk-render.ts) directly above the English item title.
+    // Falls back to English-only when the menu item has no chineseName (or was never on the
+    // menu, e.g. a hand-typed admin line item), never throws.
+    const menuItem = item.menu_item_id ? menuById.get(item.menu_item_id) : undefined;
+    const chineseLine = rasterizeChineseLine(menuItem?.chineseName);
+    if (chineseLine) chunks.push(chineseLine);
+
     const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${sentenceCase(item.item_name)}`;
     chunks.push(cmd.boldOn);
     wrapped(itemTitle);

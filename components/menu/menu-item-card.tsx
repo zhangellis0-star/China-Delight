@@ -72,7 +72,6 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black text-china-red">#{item.number}</p>
           <h3 className="mt-0.5 break-words text-base font-black leading-tight text-china-ink sm:text-lg">{item.name}</h3>
-          {item.chineseName && <p className="mt-0.5 text-sm font-semibold text-stone-600">{item.chineseName}</p>}
           {item.description && <p className="mt-1.5 text-sm leading-6 text-stone-600">{item.description}</p>}
           {item.spicy && <p className="mt-1.5 inline-flex rounded-md bg-red-50 px-2 py-0.5 text-xs font-black uppercase text-china-red">Hot & Spicy</p>}
           {soldOut && <p className="mt-1.5 inline-flex rounded-md bg-stone-200 px-2 py-0.5 text-xs font-black uppercase text-stone-800">Sold out today</p>}
