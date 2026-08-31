@@ -39,8 +39,8 @@ export const menuDataReviewNotes = [
 ];
 
 const rawMenuItems: MenuItem[] = [
-  { id: "egg-roll", number: "1", name: "Egg Roll or Vegetable Egg Roll", chineseName: "蛋卷或素菜蛋卷", category: "Appetizers", prices: { order: 2.45 }, options: regularOptions },
-  { id: "shrimp-roll", number: "2", name: "Shrimp Roll or Spring Roll", chineseName: "虾卷或春卷", category: "Appetizers", prices: { order: 2.45 }, options: regularOptions },
+  { id: "egg-roll", number: "1", name: "Egg Roll or Vegetable Egg Roll", chineseName: "春卷或菜卷", category: "Appetizers", prices: { order: 2.45 }, options: regularOptions },
+  { id: "shrimp-roll", number: "2", name: "Shrimp Roll or Spring Roll", chineseName: "虾卷或上海卷", category: "Appetizers", prices: { order: 2.45 }, options: regularOptions },
   { id: "fantail-shrimp", number: "3", name: "Fantail Shrimp", chineseName: "凤尾虾", category: "Appetizers", prices: { order: 2.45 }, options: regularOptions },
   { id: "fried-wonton", number: "5", name: "Fried Wonton (12)", chineseName: "炸云吞", category: "Appetizers", prices: { order: 6.95 }, options: regularOptions },
   { id: "crab-rangoon", number: "6", name: "Crab Rangoon (10) or Cheese Wonton", chineseName: "蟹角或芝士云吞", category: "Appetizers", prices: { order: 8.95 }, options: regularOptions },
@@ -288,7 +288,7 @@ const rawMenuItems: MenuItem[] = [
   { id: "lunch-szechuan-shrimp", number: "L46", name: "Szechuan Shrimp", chineseName: "四川虾仁", category: "Lunch Special", spicy: true, description: "Served with pork fried rice. Choice of soup or soda.", prices: { order: 9.75 }, options: lunchOptions },
 
   { id: "fortune-cookies", number: "S1", name: "Fortune Cookies", chineseName: "幸运饼干", category: "Side Orders", prices: { order: 1.75 }, options: regularOptions },
-  { id: "fried-noodles", number: "S2", name: "Fried Noodles", chineseName: "炸面", category: "Side Orders", prices: { order: 1.80 }, description: "1 bag.", options: regularOptions },
+  { id: "fried-noodles", number: "S2", name: "Fried Noodles", chineseName: "面干", category: "Side Orders", prices: { order: 1.80 }, description: "1 bag.", options: regularOptions },
   { id: "extra-white-rice", number: "S3", name: "Extra White Rice", chineseName: "白饭", category: "Side Orders", prices: { small: 4.20, large: 5.60 }, options: regularOptions },
 
 ];
@@ -297,12 +297,12 @@ type MenuSplit = { id: string; number: string; name: string; chineseName?: strin
 
 const menuItemSplits: Record<string, MenuSplit[]> = {
   "egg-roll": [
-    { id: "egg-roll", number: "1A", name: "Egg Roll", chineseName: "蛋卷" },
-    { id: "vegetable-egg-roll", number: "1B", name: "Vegetable Egg Roll", chineseName: "菜蛋卷" }
+    { id: "egg-roll", number: "1A", name: "Egg Roll", chineseName: "春卷" },
+    { id: "vegetable-egg-roll", number: "1B", name: "Vegetable Egg Roll", chineseName: "菜卷" }
   ],
   "shrimp-roll": [
     { id: "shrimp-roll", number: "2A", name: "Shrimp Roll", chineseName: "虾卷" },
-    { id: "spring-roll", number: "2B", name: "Spring Roll", chineseName: "春卷" }
+    { id: "spring-roll", number: "2B", name: "Spring Roll", chineseName: "上海卷" }
   ],
   "crab-rangoon": [
     { id: "crab-rangoon", number: "6A", name: "Crab Rangoon (10)", chineseName: "蟹角" },
