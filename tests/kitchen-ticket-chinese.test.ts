@@ -192,6 +192,27 @@ test("kitchen ticket appends the size marker to the Chinese name for large/combo
   assert.ok(comboWidth > bareWidth, "adding ' (C)' should widen the rasterized line versus the bare name");
 });
 
+test("kitchen ticket prefixes the Chinese line with the item quantity, e.g. \"2 x 芥兰鸡\"", () => {
+  function rasterWidthPx(quantity: number): number {
+    const menuItem = menuItems.find((item) => item.id === "chicken-broccoli");
+    assert.ok(menuItem, "fixture depends on the chicken-broccoli menu item existing");
+    const order = baseOrder({
+      order_items: [
+        { menu_item_id: "chicken-broccoli", item_number: menuItem!.number, item_name: menuItem!.name, quantity, unit_price: 9.55, customization: { size: "combo" } }
+      ]
+    });
+    const buffer = escposTicket(order);
+    const offsets = findRasterOffsets(buffer);
+    assert.equal(offsets.length, 1);
+    const bytesPerRow = buffer[offsets[0] + 4] | (buffer[offsets[0] + 5] << 8);
+    return bytesPerRow * 8;
+  }
+
+  // "1 x " and "12 x " render at different widths, proving the quantity digit(s) are actually
+  // part of the rasterized line rather than a fixed/ignored prefix.
+  assert.ok(rasterWidthPx(12) > rasterWidthPx(1), "a 2-digit quantity should render wider than a 1-digit quantity");
+});
+
 test("the combo marker's Latin \"C\" actually renders (not a blank/missing glyph)", () => {
   // "鸡" (chicken) is guaranteed to be in the subsetted font since real menu translations use it.
   const withMarker = rasterizeChineseLine("鸡 (C)");

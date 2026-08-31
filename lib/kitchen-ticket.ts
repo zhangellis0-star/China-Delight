@@ -209,13 +209,16 @@ export function escposTicket(order: PrintOrder) {
   // "CUSTOMER CHANGED" block for anything the customer customized (incl. special instructions).
   // A default spice level the customer never changed is not printed at all.
   for (const item of order.order_items ?? []) {
-    // Chinese name + size marker (rasterized — see lib/cjk-render.ts) directly above the English
-    // item title. Falls back to English-only when the menu item has no chineseName (or was never
-    // on the menu, e.g. a hand-typed admin line item), never throws.
+    // Quantity + Chinese name + size marker (rasterized — see lib/cjk-render.ts) directly above
+    // the English item title, e.g. "2 x 芥兰鸡 (大)". Falls back to English-only when the menu
+    // item has no chineseName (or was never on the menu, e.g. a hand-typed admin line item),
+    // never throws.
     const menuItem = item.menu_item_id ? menuById.get(item.menu_item_id) : undefined;
     const itemSize = typeof item.customization?.size === "string" ? item.customization.size : "";
     const sizeMarker = chineseSizeMarker(itemSize);
-    const chineseNameWithSize = menuItem?.chineseName ? `${menuItem.chineseName}${sizeMarker ? ` (${sizeMarker})` : ""}` : undefined;
+    const chineseNameWithSize = menuItem?.chineseName
+      ? `${item.quantity} x ${menuItem.chineseName}${sizeMarker ? ` (${sizeMarker})` : ""}`
+      : undefined;
     const chineseLine = rasterizeChineseLine(chineseNameWithSize);
     if (chineseLine) chunks.push(chineseLine);
 
