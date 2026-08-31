@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { menuItems } from "@/data/menu";
-import { escposTicket, type PrintOrder } from "@/lib/kitchen-ticket";
+import { chineseSizeMarker, escposTicket, type PrintOrder } from "@/lib/kitchen-ticket";
 import { rasterizeChineseLine } from "@/lib/cjk-render";
 
 const cjkPattern = /[一-鿿]/;
@@ -155,4 +155,63 @@ test("non-item receipt text (headers, labels, totals) is unaffected by the Chine
   // Only one raster image on the ticket (the single item's Chinese name) — headers/labels never
   // get a Chinese line of their own.
   assert.equal(findRasterOffsets(buffer).length, 1);
+});
+
+test("chineseSizeMarker maps sizes to the right parenthetical marker", () => {
+  assert.equal(chineseSizeMarker("small"), "小");
+  assert.equal(chineseSizeMarker("pint"), "小");
+  assert.equal(chineseSizeMarker("large"), "大");
+  assert.equal(chineseSizeMarker("quart"), "大");
+  assert.equal(chineseSizeMarker("combo"), "C");
+  assert.equal(chineseSizeMarker("order"), "", "the single default size gets no marker");
+  assert.equal(chineseSizeMarker("SMALL"), "小", "matching is case-insensitive");
+  assert.equal(chineseSizeMarker("unknown-size"), "");
+});
+
+test("kitchen ticket appends the size marker to the Chinese name for large/combo, omits it for order", () => {
+  function rasterWidthPx(size: string): number {
+    const menuItem = menuItems.find((item) => item.id === "chicken-broccoli");
+    assert.ok(menuItem, "fixture depends on the chicken-broccoli menu item existing");
+    const order = baseOrder({
+      order_items: [
+        { menu_item_id: "chicken-broccoli", item_number: menuItem!.number, item_name: menuItem!.name, quantity: 1, unit_price: 9.55, customization: { size } }
+      ]
+    });
+    const buffer = escposTicket(order);
+    const offsets = findRasterOffsets(buffer);
+    assert.equal(offsets.length, 1);
+    const bytesPerRow = buffer[offsets[0] + 4] | (buffer[offsets[0] + 5] << 8);
+    return bytesPerRow * 8;
+  }
+
+  const bareWidth = rasterWidthPx("order");
+  const largeWidth = rasterWidthPx("large");
+  const comboWidth = rasterWidthPx("combo");
+
+  assert.ok(largeWidth > bareWidth, "adding ' (大)' should widen the rasterized line versus the bare name");
+  assert.ok(comboWidth > bareWidth, "adding ' (C)' should widen the rasterized line versus the bare name");
+});
+
+test("the combo marker's Latin \"C\" actually renders (not a blank/missing glyph)", () => {
+  // "鸡" (chicken) is guaranteed to be in the subsetted font since real menu translations use it.
+  const withMarker = rasterizeChineseLine("鸡 (C)");
+  const withoutMarker = rasterizeChineseLine("鸡");
+  assert.ok(withMarker);
+  assert.ok(withoutMarker);
+  // If "C" were missing from the font subset, the marker adds width (blank space) but no extra
+  // ink beyond what the parens themselves would draw — check there is real extra dark-pixel
+  // coverage, not just a wider blank canvas.
+  function darkPixelCount(buf: Buffer): number {
+    const bytesPerRow = buf[4] | (buf[5] << 8);
+    const heightPx = buf[6] | (buf[7] << 8);
+    const data = buf.subarray(8);
+    let count = 0;
+    for (let i = 0; i < bytesPerRow * heightPx; i++) {
+      const byte = data[i];
+      for (let bit = 0; bit < 8; bit++) if ((byte >> bit) & 1) count++;
+    }
+    return count;
+  }
+  const extraInk = darkPixelCount(withMarker!) - darkPixelCount(withoutMarker!);
+  assert.ok(extraInk > 20, `expected the " (C)" suffix to add real ink (parens + a C glyph), got only ${extraInk} extra dark pixels`);
 });

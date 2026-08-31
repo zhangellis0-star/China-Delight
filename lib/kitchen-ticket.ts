@@ -19,6 +19,18 @@ function defaultSpiceLevel(menuItemId?: string | null): string {
   return menuItem?.spicy ? "Hot" : "None";
 }
 
+// Size marker appended to the Chinese name in parentheses, e.g. "西兰花鸡 (大)". Pint/quart are
+// the same small/large tiers under a different name (soups, fried rice, lo mein, etc. use
+// pint/quart instead of small/large, but never both on the same item), so they share a marker.
+// "order" is the single default size and gets no marker.
+export function chineseSizeMarker(size: string): string {
+  const normalized = size.trim().toLowerCase();
+  if (normalized === "small" || normalized === "pint") return "小";
+  if (normalized === "large" || normalized === "quart") return "大";
+  if (normalized === "combo") return "C";
+  return "";
+}
+
 // Regular sentence case (lowercase with only the first letter capitalized) instead of shouting
 // in all caps, for the item names/notes/customizations that make up the order itself.
 function sentenceCase(value: string): string {
@@ -197,11 +209,14 @@ export function escposTicket(order: PrintOrder) {
   // "CUSTOMER CHANGED" block for anything the customer customized (incl. special instructions).
   // A default spice level the customer never changed is not printed at all.
   for (const item of order.order_items ?? []) {
-    // Chinese name (rasterized — see lib/cjk-render.ts) directly above the English item title.
-    // Falls back to English-only when the menu item has no chineseName (or was never on the
-    // menu, e.g. a hand-typed admin line item), never throws.
+    // Chinese name + size marker (rasterized — see lib/cjk-render.ts) directly above the English
+    // item title. Falls back to English-only when the menu item has no chineseName (or was never
+    // on the menu, e.g. a hand-typed admin line item), never throws.
     const menuItem = item.menu_item_id ? menuById.get(item.menu_item_id) : undefined;
-    const chineseLine = rasterizeChineseLine(menuItem?.chineseName);
+    const itemSize = typeof item.customization?.size === "string" ? item.customization.size : "";
+    const sizeMarker = chineseSizeMarker(itemSize);
+    const chineseNameWithSize = menuItem?.chineseName ? `${menuItem.chineseName}${sizeMarker ? ` (${sizeMarker})` : ""}` : undefined;
+    const chineseLine = rasterizeChineseLine(chineseNameWithSize);
     if (chineseLine) chunks.push(chineseLine);
 
     const itemTitle = `${item.quantity} x ${item.item_number ? `#${item.item_number} ` : ""}${sentenceCase(item.item_name)}`;

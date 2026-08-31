@@ -41,9 +41,11 @@ async function main() {
   const fullFont = Buffer.from(await response.arrayBuffer());
   console.log(`Downloaded ${fullFont.length} bytes.`);
 
-  // Digits/basic punctuation are included defensively even though item names print via ESC/POS
-  // text, not this font — cheap to keep and avoids surprises if a translation ever includes them.
-  const text = chineseChars + "0123456789().,%-&/ ";
+  // Digits/letters/basic punctuation are included so parenthetical size markers like "(C)" for
+  // combo (see lib/kitchen-ticket.ts chineseSizeMarker) render correctly alongside the Chinese
+  // name in the same rasterized line — cheap to keep even though item names print via ESC/POS
+  // text, not this font.
+  const text = chineseChars + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789().,%-&/ ";
   const subset = await subsetFont(fullFont, text, {
     targetFormat: "sfnt",
     variationAxes: { wght: 700 }
