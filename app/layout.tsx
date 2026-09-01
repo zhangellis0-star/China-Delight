@@ -3,7 +3,6 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/components/cart/cart-provider";
 import { AdminAwareFooter } from "@/components/admin-aware-footer";
-import { CashDiscountPopup } from "@/components/cash-discount-popup";
 import { SiteHeader } from "@/components/site-header";
 import { restaurant } from "@/lib/restaurant";
 
@@ -22,7 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SiteHeader />
           <main className="min-w-0 max-w-full">{children}</main>
           <AdminAwareFooter />
-          <CashDiscountPopup />
+          {/* CashDiscountPopup (components/cash-discount-popup.tsx) is paused — not removed.
+              Re-add <CashDiscountPopup /> here to bring the homepage popup back. */}
         </CartProvider>
       </body>
     </html>
