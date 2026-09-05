@@ -55,9 +55,9 @@ const rawMenuItems: MenuItem[] = [
   { id: "pu-pu-platter", number: "16", name: "Pu Pu Platter", chineseName: "大宝", category: "Appetizers", prices: { order: 16.55 }, description: "Egg roll(2), crab rangoon(2), golden finger(6), fantail shrimp(2), fried wonton(6), BBQ spare ribs(2), teriyaki beef(2).", options: regularOptions },
   { id: "mini-pu-pu-platter", number: "16a", name: "Mini Pu Pu Platter", chineseName: "小宝", category: "Appetizers", prices: { order: 15.95 }, description: "Egg roll(1), Cheese Wonton(7), Teriyaki Chicken(2), golden finger(7).", options: regularOptions },
   { id: "cold-sesame-noodles", number: "17", name: "Cold Sesame Noodles", chineseName: "凉面", category: "Appetizers", spicy: true, prices: { order: 9.35 }, options: regularOptions },
-  { id: "steamed-wonton-sesame", number: "17a", name: "Steamed Wonton in Sesame Peanut Sauce", chineseName: "麻酱云吞", category: "Appetizers", prices: { order: 9.35 }, options: regularOptions },
-  { id: "pan-fried-wonton-ginger", number: "18", name: "Pan Fried Wonton with Ginger Sauce", chineseName: "姜汁煎云吞", category: "Appetizers", prices: { order: 9.35 }, options: regularOptions },
-  { id: "sugar-donut", number: "19", name: "Sugar Donut (10)", chineseName: "炸糖球", category: "Appetizers", prices: { order: 9.35 }, options: regularOptions },
+  { id: "steamed-wonton-sesame", number: "17a", name: "Steamed Wonton in Sesame Peanut Sauce", chineseName: "芝麻云吞", category: "Appetizers", prices: { order: 9.35 }, options: regularOptions },
+  { id: "pan-fried-wonton-ginger", number: "18", name: "Pan Fried Wonton with Ginger Sauce", chineseName: "煎云吞", category: "Appetizers", prices: { order: 9.35 }, options: regularOptions },
+  { id: "sugar-donut", number: "19", name: "Sugar Donut (10)", chineseName: "炸包", category: "Appetizers", prices: { order: 9.35 }, options: regularOptions },
   { id: "fried-shrimp-app", number: "19a", name: "Fried Shrimp", chineseName: "炸虾", category: "Appetizers", prices: { order: 9.35 }, options: regularOptions },
   { id: "teriyaki-chicken", number: "20", name: "Teriyaki Chicken (3)", chineseName: "鸡串", category: "Appetizers", prices: { order: 6.80 }, options: regularOptions },
   { id: "french-fries", number: "20b", name: "French Fries", chineseName: "薯条", category: "Appetizers", prices: { order: 7.75 }, options: regularOptions },
@@ -70,8 +70,8 @@ const rawMenuItems: MenuItem[] = [
   { id: "vegetable-soup", number: "26", name: "Vegetable Soup", chineseName: "菜汤", category: "Soup", description: "With fried noodles.", prices: { pint: 5.60, quart: 8.50 }, options: regularOptions },
   { id: "hot-sour-soup", number: "27", name: "Hot & Sour Soup", chineseName: "酸辣汤", category: "Soup", spicy: true, description: "With fried noodles.", prices: { pint: 6.10, quart: 8.50 }, options: regularOptions },
   { id: "house-special-soup", number: "28", name: "House Special Soup", chineseName: "本楼汤", category: "Soup", description: "With fried noodles.", prices: { quart: 8.50 }, options: regularOptions },
-  { id: "chicken-vegetable-soup", number: "29", name: "Chicken with Vegetable Soup", chineseName: "鸡肉蔬菜汤", category: "Soup", description: "With fried noodles.", prices: { quart: 8.50 }, options: regularOptions },
-  { id: "bean-curd-subgum-wonton-soup", number: "30", name: "Bean Curd Subgum Wonton Soup", chineseName: "豆腐什锦云吞汤", category: "Soup", description: "With fried noodles.", prices: { quart: 8.50 }, options: regularOptions },
+  { id: "chicken-vegetable-soup", number: "29", name: "Chicken with Vegetable Soup", chineseName: "鸡菜汤", category: "Soup", description: "With fried noodles.", prices: { quart: 8.50 }, options: regularOptions },
+  { id: "bean-curd-subgum-wonton-soup", number: "30", name: "Bean Curd Subgum Wonton Soup", chineseName: "豆腐杂菜云吞汤", category: "Soup", description: "With fried noodles.", prices: { quart: 8.50 }, options: regularOptions },
 
   { id: "roast-pork-fried-rice", number: "31", name: "Roast Pork Fried Rice", chineseName: "叉烧炒饭", category: "Fried Rice", prices: { pint: 6.95, quart: 10.50 }, options: regularOptions },
   { id: "chicken-fried-rice", number: "32", name: "Chicken Fried Rice", chineseName: "鸡炒饭", category: "Fried Rice", prices: { pint: 6.95, quart: 10.50 }, options: regularOptions },
@@ -87,29 +87,28 @@ const rawMenuItems: MenuItem[] = [
   { id: "shrimp-lo-mein", number: "41", name: "Shrimp Lo Mein", chineseName: "虾捞面", category: "Lo Mein", description: "Soft noodles.", prices: { pint: 8.85, quart: 11.75, combo: 11.75 }, options: regularOptions },
   { id: "beef-lo-mein", number: "42", name: "Beef Lo Mein", chineseName: "牛捞面", category: "Lo Mein", description: "Soft noodles.", prices: { pint: 8.85, quart: 11.75, combo: 11.75 }, options: regularOptions },
   { id: "vegetable-lo-mein", number: "43", name: "Vegetable Lo Mein", chineseName: "菜捞面", category: "Lo Mein", description: "Soft noodles.", prices: { pint: 8.85, quart: 11.75, combo: 11.75 }, options: regularOptions },
-  { id: "plain-lo-mein", number: "43a", name: "Plain Lo Mein", chineseName: "尽捞面", category: "Lo Mein", description: "Soft noodles.", prices: { pint: 8.85, quart: 11.75 }, options: regularOptions },
+  { id: "plain-lo-mein", number: "43a", name: "Plain Lo Mein", chineseName: "净捞面", category: "Lo Mein", description: "Soft noodles.", prices: { pint: 8.85, quart: 11.75 }, options: regularOptions },
   { id: "house-special-lo-mein", number: "44", name: "House Special Lo Mein", chineseName: "本楼捞面", category: "Lo Mein", description: "Soft noodles.", prices: { order: 12.70 }, options: regularOptions },
 
 
-  { id: "roast-pork-chinese-vegetables", number: "59", name: "Roast Pork with Chinese Vegetables", chineseName: "叉烧中国杂菜", category: "Roast Pork", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
-  { id: "roast-pork-black-bean", number: "60", name: "Roast Pork with Black Bean Sauce", chineseName: "豉汁叉烧", category: "Roast Pork", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
+  { id: "roast-pork-chinese-vegetables", number: "59", name: "Roast Pork with Chinese Vegetables", chineseName: "叉烧杂菜", category: "Roast Pork", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
+  { id: "roast-pork-black-bean", number: "60", name: "Roast Pork with Black Bean Sauce", chineseName: "豆豉叉烧", category: "Roast Pork", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
   { id: "roast-pork-broccoli", number: "62", name: "Roast Pork with Broccoli", chineseName: "芥兰叉烧", category: "Roast Pork", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
   { id: "roast-pork-mixed-vegetables", number: "62a", name: "Roast Pork with Mixed Vegetables", chineseName: "叉烧杂菜", category: "Roast Pork", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
 
- 
-  { id: "beef-chinese-vegetables", number: "64", name: "Beef with Chinese Vegetables", chineseName: "时蔬牛肉", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "beef-mushroom-oyster", number: "65", name: "Beef with Mushroom Oyster Sauce", chineseName: "蘑菇蚝油牛肉", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "beef-green-pepper-tomato", number: "66", name: "Beef with Green Pepper & Tomato", chineseName: "青椒番茄牛肉", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "pepper-steak-onion", number: "67", name: "Pepper Steak with Onion", chineseName: "洋葱青椒牛肉", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+
+  { id: "beef-chinese-vegetables", number: "64", name: "Beef with Chinese Vegetables", chineseName: "白菜牛", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "beef-mushroom-oyster", number: "65", name: "Beef with Mushroom Oyster Sauce", chineseName: "蘑菇牛", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "pepper-steak-onion", number: "67", name: "Pepper Steak with Onion", chineseName: "青椒牛", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
   { id: "beef-broccoli", number: "68", name: "Beef with Broccoli", chineseName: "芥兰牛", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
   { id: "curry-beef-onion", number: "69", name: "Curry Beef with Onion", chineseName: "咖喱牛", category: "Beef", spicy: true, description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
   { id: "beef-mixed-vegetables", number: "69a", name: "Beef with Mixed Vegetables", chineseName: "杂菜牛", category: "Beef", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
 
  
   { id: "moo-goo-gai-pan", number: "71", name: "Moo Goo Gai Pan", chineseName: "蘑菇鸡片", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
-  { id: "chicken-green-pepper-tomato", number: "72", name: "Chicken with Green Pepper & Tomato", chineseName: "青椒番茄鸡", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
+  { id: "chicken-green-pepper-tomato", number: "72", name: "Chicken with Green Pepper & Onion", chineseName: "青椒鸡", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
   { id: "chicken-mushroom-oyster", number: "73", name: "Chicken with Mushroom Oyster Sauce", chineseName: "蘑菇蚝油鸡", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
-  { id: "chicken-black-bean", number: "74", name: "Chicken with Black Bean Sauce", chineseName: "豉汁鸡", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
+  { id: "chicken-black-bean", number: "74", name: "Chicken with Black Bean Sauce", chineseName: "豆豉鸡", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
   { id: "chicken-cashew-nuts", number: "75", name: "Chicken with Cashew Nuts", chineseName: "腰果鸡", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
   { id: "chicken-mixed-vegetables", number: "76", name: "Chicken with Mixed Vegetables", chineseName: "杂菜鸡", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
   { id: "chicken-broccoli", number: "77", name: "Chicken with Broccoli", chineseName: "芥兰鸡", category: "Chicken", description: "With white rice.", prices: { pint: 9.55, quart: 13.95, combo: 12.35 }, options: riceOptions },
@@ -118,14 +117,14 @@ const rawMenuItems: MenuItem[] = [
 
   { id: "Black Pepper Shrimp", number: "79", name: "Black Pepper Shrimp", chineseName: "黑椒虾", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
 
-  { id: "shrimp-chinese-vegetables", number: "81", name: "Shrimp with Chinese Vegetables", chineseName: "时蔬虾仁", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "shrimp-green-pepper-tomato", number: "82", name: "Shrimp with Green Pepper & Tomato", chineseName: "青椒番茄虾仁", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "shrimp-black-bean", number: "83", name: "Shrimp with Black Bean Sauce", chineseName: "豉汁虾仁", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "shrimp-cashew-nuts", number: "84", name: "Shrimp with Cashew Nuts", chineseName: "腰果虾仁", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "shrimp-broccoli", number: "85", name: "Shrimp with Broccoli", chineseName: "西兰花虾仁", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "shrimp-mixed-vegetables", number: "86", name: "Shrimp with Mixed Vegetables", chineseName: "什锦虾仁", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "shrimp-lobster-sauce-alt", number: "87", name: "Shrimp with Lobster Sauce", chineseName: "龙虾汁虾仁", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
-  { id: "curry-shrimp-onion", number: "89", name: "Curry Shrimp with Onion", chineseName: "咖喱虾仁", category: "Seafood", spicy: true, description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "shrimp-chinese-vegetables", number: "81", name: "Shrimp with Chinese Vegetables", chineseName: "白菜虾", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "shrimp-green-pepper-tomato", number: "82", name: "Shrimp with Green Pepper & Onion", chineseName: "青椒虾", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "shrimp-black-bean", number: "83", name: "Shrimp with Black Bean Sauce", chineseName: "豆豉汁虾", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "shrimp-cashew-nuts", number: "84", name: "Shrimp with Cashew Nuts", chineseName: "腰果虾", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "shrimp-broccoli", number: "85", name: "Shrimp with Broccoli", chineseName: "介蓝虾", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "shrimp-mixed-vegetables", number: "86", name: "Shrimp with Mixed Vegetables", chineseName: "杂菜虾", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "shrimp-lobster-sauce-alt", number: "87", name: "Shrimp with Lobster Sauce", chineseName: "虾龙虎", category: "Seafood", description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
+  { id: "curry-shrimp-onion", number: "89", name: "Curry Shrimp with Onion", chineseName: "咖喱虾", category: "Seafood", spicy: true, description: "With white rice.", prices: { pint: 9.80, quart: 14.20, combo: 12.60 }, options: riceOptions },
 
   { id: "sweet-sour-pork", number: "90", name: "Sweet & Sour Pork", chineseName: "甜酸肉", category: "Sweet & Sour", description: "With white rice.", prices: { pint: 9.45, quart: 12.35, combo: 12.45 }, options: riceOptions },
   { id: "sweet-sour-chicken", number: "91", name: "Sweet & Sour Chicken", chineseName: "甜酸鸡", category: "Sweet & Sour", description: "With white rice.", prices: { pint: 9.45, quart: 12.35, combo: 12.45 }, options: riceOptions },
@@ -141,12 +140,12 @@ const rawMenuItems: MenuItem[] = [
 
   { id: "sauteed-broccoli", number: "99", name: "Sauteed Broccoli or Buddhist Delight", chineseName: "炒西兰花或罗汉斋", category: "Vegetable", description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
   { id: "tofu-broccoli", number: "99a", name: "Tofu with Broccoli", chineseName: "芥兰豆腐", category: "Vegetable", description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
-  { id: "mixed-chinese-vegetables", number: "100", name: "Mixed Chinese Vegetables", chineseName: "什锦时蔬", category: "Vegetable", description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
-  { id: "eggplant-garlic-sauce", number: "100a", name: "Eggplant & Broccoli with Garlic Sauce", chineseName: "鱼香茄子芥兰", category: "Vegetable", spicy: true, description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
+  { id: "mixed-chinese-vegetables", number: "100", name: "Mixed Chinese Vegetables", chineseName: "杂菜", category: "Vegetable", description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
+  { id: "eggplant-garlic-sauce", number: "100a", name: "Eggplant & Broccoli with Garlic Sauce", chineseName: "鱼香茄子", category: "Vegetable", spicy: true, description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
   { id: "tofu-mixed-vegetables", number: "101", name: "Tofu with Mixed Vegetables", chineseName: "杂菜豆腐", category: "Vegetable", description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
   { id: "broccoli-garlic-sauce", number: "102", name: "Broccoli with Garlic Sauce", chineseName: "鱼香芥兰", category: "Vegetable", spicy: true, description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
   { id: "bean-curd-home-style", number: "103", name: "Bean Curd Home Style", chineseName: "家常豆腐", category: "Vegetable", description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
-  { id: "string-beans-broccoli-garlic", number: "103a", name: "String Beans & Broccoli in Garlic Sauce", chineseName: "鱼香四季豆芥兰", category: "Vegetable", spicy: true, description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
+  { id: "string-beans-broccoli-garlic", number: "103a", name: "String Beans & Broccoli in Garlic Sauce", chineseName: "四季豆芥兰", category: "Vegetable", spicy: true, description: "With white rice.", prices: { order: 12.35 }, options: riceOptions },
 
   { id: "chicken-chow-fun", number: "104", name: "Chicken Chow Fun or Mai Fun", chineseName: "鸡河粉或炒米粉", category: "Chow Fun/Mai Fun", prices: { order: 12.45 }, options: regularOptions },
   { id: "pork-chow-fun", number: "105", name: "Pork Chow Fun or Mai Fun", chineseName: "猪河粉或米粉", category: "Chow Fun/Mai Fun", prices: { order: 12.45 }, options: regularOptions },
@@ -158,12 +157,12 @@ const rawMenuItems: MenuItem[] = [
 
   { id: "wings-french-fries", number: "108", name: "Chicken Wings with French Fries", chineseName: "鸡翅薯条", category: "Wings", prices: { order: 12.35 }, options: regularOptions },
   { id: "wings-pork-fried-rice", number: "109", name: "Chicken Wings with Pork Fried Rice", chineseName: "鸡翅叉烧炒饭", category: "Wings", prices: { order: 12.35 }, options: regularOptions },
-  { id: "wings-shrimp-fried-rice", number: "110", name: "Chicken Wings with Shrimp Fried Rice or Beef", chineseName: "鸡翅虾仁炒饭或牛肉炒饭", category: "Wings", prices: { order: 12.35 }, options: regularOptions },
+  { id: "wings-shrimp-fried-rice", number: "110", name: "Chicken Wings with Shrimp Fried Rice or Beef", chineseName: "鸡翅虾炒饭或牛炒饭", category: "Wings", prices: { order: 12.35 }, options: regularOptions },
   { id: "wings-white-rice", number: "111", name: "Chicken Wings with White Rice", chineseName: "鸡翅白饭", category: "Wings", prices: { order: 12.35 }, options: regularOptions },
 
   { id: "moo-shu-pork-chicken", number: "112", name: "Moo Shu Pork or Chicken", chineseName: "木须肉或木须鸡", category: "Szechuan & Hunan Dishes", description: "With white rice except moo shu dishes.", prices: { order: 12.95 }, options: riceOptions },
   { id: "moo-shu-shrimp-beef", number: "113", name: "Moo Shu Shrimp or Beef", chineseName: "木须虾或木须牛肉", category: "Szechuan & Hunan Dishes", description: "With white rice except moo shu dishes.", prices: { order: 12.95 }, options: riceOptions },
-  { id: "moo-shu-vegetable", number: "114", name: "Moo Shu Vegetable", chineseName: "木须素菜", category: "Szechuan & Hunan Dishes", description: "With white rice except moo shu dishes.", prices: { order: 12.95 }, options: riceOptions },
+  { id: "moo-shu-vegetable", number: "114", name: "Moo Shu Vegetable", chineseName: "木须菜", category: "Szechuan & Hunan Dishes", description: "With white rice except moo shu dishes.", prices: { order: 12.95 }, options: riceOptions },
   { id: "chicken-string-bean", number: "115", name: "Chicken with String Bean", chineseName: "四季豆鸡", category: "Szechuan & Hunan Dishes", prices: { order: 13.85 }, options: riceOptions },
   { id: "shrimp-string-bean", number: "116", name: "Shrimp with String Bean", chineseName: "四季豆虾", category: "Szechuan & Hunan Dishes", prices: { order: 13.85 }, options: riceOptions },
   { id: "sesame-chicken", number: "117", name: "Sesame Chicken", chineseName: "芝麻鸡", category: "Szechuan & Hunan Dishes", prices: { order: 14.70 }, options: riceOptions },
@@ -175,39 +174,39 @@ const rawMenuItems: MenuItem[] = [
   { id: "chicken-garlic-sauce", number: "124", name: "Chicken with Garlic Sauce", chineseName: "鱼香鸡", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
   { id: "beef-garlic-sauce", number: "125", name: "Beef with Garlic Sauce", chineseName: "鱼香牛", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
   { id: "shrimp-garlic-sauce", number: "126", name: "Shrimp with Garlic Sauce", chineseName: "鱼香虾", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 14.20 }, options: riceOptions },
-  { id: "kung-po-chicken", number: "127", name: "Kung Po Chicken with Peanuts", chineseName: "宫保鸡丁", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
+  { id: "kung-po-chicken", number: "127", name: "Kung Po Chicken with Peanuts", chineseName: "宫保鸡", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
   { id: "kung-po-shrimp", number: "128", name: "Kung Po Shrimp with Peanuts", chineseName: "宫保虾", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
-  { id: "shrimp-chicken-garlic", number: "129", name: "Shrimp & Chicken in Garlic Sauce", chineseName: "鱼香虾和鸡", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
+  { id: "shrimp-chicken-garlic", number: "129", name: "Shrimp & Chicken in Garlic Sauce", chineseName: "鱼香鸡虾", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
   { id: "general-tsos-tofu", number: "130", name: "General Tso's Tofu", chineseName: "左宗豆腐", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
   { id: "shrimp-szechuan-style", number: "132", name: "Shrimp Szechuan Style", chineseName: "四川虾", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
-  { id: "shrimp-chicken-hunan", number: "133", name: "Shrimp & Chicken Hunan Style", chineseName: "湖南虾和鸡", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
+  { id: "shrimp-chicken-hunan", number: "133", name: "Shrimp & Chicken Hunan Style", chineseName: "湖南鸡虾", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.95 }, options: riceOptions },
   { id: "general-tsos-shrimp", number: "134", name: "General Tso's Shrimp", chineseName: "左宗虾", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 14.70 }, options: riceOptions },
   { id: "general-tsos-chicken", number: "135", name: "General Tso's Chicken", chineseName: "左宗鸡", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 14.70 }, options: riceOptions },
   { id: "chicken-szechuan-style", number: "136", name: "Chicken Szechuan Style", chineseName: "四川鸡", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 13.45 }, options: riceOptions },
-  { id: "general-tsos-double", number: "137", name: "General Tso's Double (Chicken & Shrimp)", chineseName: "左宗鸡虾双拼", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 14.70 }, options: riceOptions },
+  { id: "general-tsos-double", number: "137", name: "General Tso's Double (Chicken & Shrimp)", chineseName: "左宗双样", category: "Szechuan & Hunan Dishes", spicy: true, prices: { order: 14.70 }, options: riceOptions },
   { id: "honey-chicken", number: "137b", name: "Honey Chicken", chineseName: "蜜鸡", category: "Szechuan & Hunan Dishes", prices: { order: 14.70 }, options: riceOptions },
 
-  { id: "combo-bbq-ribs", number: "C1", name: "Bar-B-Q Spare Ribs or Boneless", chineseName: "叉烧排骨或无骨排骨", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.45 }, options: comboOptions },
-  { id: "combo-boneless-chicken-finger", number: "C2", name: "Boneless & Chicken Finger", chineseName: "无骨排骨鸡柳", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.95 }, options: comboOptions },
+  { id: "combo-bbq-ribs", number: "C1", name: "Bar-B-Q Spare Ribs or Boneless", chineseName: "排骨或无骨排", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.45 }, options: comboOptions },
+  { id: "combo-boneless-chicken-finger", number: "C2", name: "Boneless & Chicken Finger", chineseName: "无骨排骨鸡爪", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.95 }, options: comboOptions },
     { id: "combo-boneless-general-tso's-chicken", number: "C2b", name: "Boneless & General Tso's Chicken", chineseName: "无骨排骨左宗鸡", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.95 }, options: comboOptions },
   { id: "combo-sesame-chicken", number: "C3", name: "Sesame Chicken", chineseName: "芝麻鸡", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-sesame-shrimp", number: "C4", name: "Sesame Shrimp", chineseName: "芝麻虾", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.60 }, options: comboOptions },
-  { id: "combo-golden-finger-teriyaki-chicken", number: "C5", name: "Golden Finger & Teriyaki Chicken", chineseName: "鸡手指鸡串", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
-  { id: "combo-golden-finger-teriyaki-beef", number: "C6", name: "Golden Finger & Teriyaki Beef", chineseName: "鸡手指牛串", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.60 }, options: comboOptions },
-  { id: "combo-chicken-shrimp-combo", number: "C6a", name: "Chicken and Shrimp Combination", chineseName: "鸡虾双拼", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
+  { id: "combo-golden-finger-teriyaki-chicken", number: "C5", name: "Golden Finger & Teriyaki Chicken", chineseName: "鸡爪鸡串", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
+  { id: "combo-golden-finger-teriyaki-beef", number: "C6", name: "Golden Finger & Teriyaki Beef", chineseName: "鸡爪牛串", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.60 }, options: comboOptions },
+  { id: "combo-chicken-shrimp-combo", number: "C6a", name: "Chicken and Shrimp Combination", chineseName: "双丁", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-chicken-garlic-pork", number: "C7", name: "Chicken with Garlic Sauce or Pork", chineseName: "鱼香鸡或鱼香叉烧", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-shrimp-garlic-beef", number: "C8", name: "Shrimp with Garlic Sauce or Beef", chineseName: "鱼香虾或鱼香牛", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-general-tsos-chicken", number: "C9", name: "General Tso's Chicken", chineseName: "左宗鸡", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-hunan-beef-chicken", number: "C10", name: "Hunan Beef or Chicken", chineseName: "湖南牛或湖南鸡", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-general-tsos-shrimp", number: "C11", name: "General Tso's Shrimp", chineseName: "左宗虾", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.50 }, options: comboOptions },
-  { id: "combo-kung-po-chicken", number: "C11a", name: "Kung Po Chicken with Peanuts", chineseName: "宫保鸡丁", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
-  { id: "combo-string-beans-garlic", number: "C12", name: "String Beans with Chicken or Shrimp in Garlic Sauce", chineseName: "鱼香四季豆鸡或虾", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
+  { id: "combo-kung-po-chicken", number: "C11a", name: "Kung Po Chicken with Peanuts", chineseName: "宫保鸡", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
+  { id: "combo-string-beans-garlic", number: "C12", name: "String Beans with Chicken or Shrimp in Garlic Sauce", chineseName: "四季豆鸡或虾", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-crispy-orange-chicken", number: "C13", name: "Crispy Orange Chicken", chineseName: "陈皮鸡", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-eggplant-garlic", number: "C14", name: "Eggplant with Chicken or Shrimp in Garlic Sauce", chineseName: "鱼香茄子鸡或虾", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", spicy: true, prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-honey-chicken", number: "C15", name: "Honey Chicken", chineseName: "蜜鸡", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-sauteed-broccoli", number: "C16", name: "Sauteed Broccoli", chineseName: "炒芥兰", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-tofu-mixed-vegetables", number: "C17", name: "Tofu with Mixed Vegetables", chineseName: "豆腐杂菜", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
-  { id: "combo-chicken-finger", number: "C18", name: "Chicken Finger", chineseName: "鸡手指", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
+  { id: "combo-chicken-finger", number: "C18", name: "Chicken Finger", chineseName: "鸡爪", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.35 }, options: comboOptions },
   { id: "combo-coconut-shrimp", number: "C19", name: "Coconut Shrimp", chineseName: "椰子虾", category: "Special Combination Platters", description: "Each plate served with egg roll and pork fried rice.", prices: { combo: 12.50 }, options: comboOptions },
 
   { id: "seafood-combination", number: "138", name: "Seafood Combination", chineseName: "海鲜大会", category: "Chef Specials", description: "Lobster chunks, crabmeat, jumbo shrimp, scallops, sauteed with assorted Chinese vegetables.", prices: { order: 18.20 }, options: riceOptions },
@@ -220,8 +219,8 @@ const rawMenuItems: MenuItem[] = [
   { id: "seven-stars-around-moon", number: "146", name: "Seven Stars Around the Moon (For 2)", chineseName: "七星", category: "Chef Specials", description: "Chicken, beef, roast pork, scallops and crabmeat with all season vegetables topped with seven fantail shrimp.", prices: { order: 22.50 }, options: riceOptions },
   { id: "hawaii-delight", number: "147", name: "Hawaii Delight", chineseName: "夏威夷", category: "Chef Specials", description: "Mixed of beef, chicken, jumbo shrimp and roast pork with mixed vegetables in chef's special brown sauce.", prices: { order: 15.20 }, options: riceOptions },
   { id: "chow-gai-kew", number: "148", name: "Chow Gai Kew (Chicken)", chineseName: "炒鸡球", category: "Chef Specials", description: "Breaded white meat chicken with brown sauce and mixed vegetables.", prices: { order: 13.75 }, options: riceOptions },
-  { id: "triple-crown", number: "149", name: "Triple Crown", chineseName: "三皇", category: "Chef Specials", description: "Sliced tenderloin of roast pork, beef and chicken sauteed with green and red pepper in a delicate brown spicy sauce.", spicy: true, prices: { order: 15.00 }, options: riceOptions },
-  { id: "tai-chien-chicken", number: "150", name: "Tai-Chien Chicken", chineseName: "太千鸡", category: "Chef Specials", description: "Breaded chunks of chicken with mixed vegetables in hot spicy Szechuan sauce.", spicy: true, prices: { order: 13.80 }, options: riceOptions },
+  { id: "triple-crown", number: "149", name: "Triple Crown", chineseName: "大三元", category: "Chef Specials", description: "Sliced tenderloin of roast pork, beef and chicken sauteed with green and red pepper in a delicate brown spicy sauce.", spicy: true, prices: { order: 15.00 }, options: riceOptions },
+  { id: "tai-chien-chicken", number: "150", name: "Tai-Chien Chicken", chineseName: "大千鸡", category: "Chef Specials", description: "Breaded chunks of chicken with mixed vegetables in hot spicy Szechuan sauce.", spicy: true, prices: { order: 13.80 }, options: riceOptions },
   { id: "crispy-orange-beef", number: "151", name: "Crispy Orange Flavor Beef", chineseName: "陈皮牛", category: "Chef Specials", spicy: true, prices: { order: 14.70 }, options: riceOptions },
   { id: "crispy-orange-chicken-chef", number: "151a", name: "Crispy Orange Flavor Chicken", chineseName: "陈皮鸡", category: "Chef Specials", spicy: true, prices: { order: 14.70 }, options: riceOptions },
   { id: "twin-flavor-chicken", number: "152", name: "Twin Flavor Chicken", chineseName: "双味鸡", category: "Chef Specials", description: "Combination of General Tso's chicken and chicken with snow peas.", prices: { order: 16.20 }, options: riceOptions },
@@ -236,10 +235,10 @@ const rawMenuItems: MenuItem[] = [
   { id: "diet-chicken-mixed-vegetables", number: "D2", name: "Chicken with Mixed Vegetables", chineseName: "水煮杂菜鸡", category: "Diet Food / Steamed", description: "With white rice and sauce on the side.", prices: { pint: 9.45, large: 13.95 }, options: riceOptions },
   { id: "diet-chicken-broccoli", number: "D3", name: "Chicken with Broccoli", chineseName: "水煮芥兰鸡", category: "Diet Food / Steamed", description: "With white rice and sauce on the side.", prices: { pint: 9.45, large: 13.95 }, options: riceOptions },
   { id: "diet-shrimp-broccoli", number: "D4", name: "Shrimp with Broccoli", chineseName: "水煮芥兰虾", category: "Diet Food / Steamed", description: "With white rice and sauce on the side.", prices: { pint: 9.85, large: 13.95 }, options: riceOptions },
-  { id: "diet-buddhist-delight", number: "D5", name: "Buddhist Delight", chineseName: "清蒸罗汉斋", category: "Diet Food / Steamed", description: "With white rice and sauce on the side.", prices: { pint: 9.45, large: 13.95}, options: riceOptions },
-  { id: "diet-string-bean", number: "D6", name: "String Bean Chicken or Shrimp", chineseName: "清蒸四季豆鸡或虾", category: "Diet Food / Steamed", description: "With white rice and sauce on the side.", prices: { pint: 8.95, large: 13.95 }, options: riceOptions },
+  { id: "diet-buddhist-delight", number: "D5", name: "Buddhist Delight", chineseName: "水煮罗汉斋", category: "Diet Food / Steamed", description: "With white rice and sauce on the side.", prices: { pint: 9.45, large: 13.95}, options: riceOptions },
+  { id: "diet-string-bean", number: "D6", name: "String Bean Chicken or Shrimp", chineseName: "水煮四季豆鸡或虾", category: "Diet Food / Steamed", description: "With white rice and sauce on the side.", prices: { pint: 8.95, large: 13.95 }, options: riceOptions },
 
-  { id: "lunch-mixed-vegetables", number: "LD1", name: "Mixed Chinese Vegetables", chineseName: "什锦时蔬", category: "Lunch Special", description: "Served with pork fried rice. Choice of wonton soup, egg drop soup, egg roll, or canned soda.", prices: { order: 9.45 }, options: lunchOptions },
+  { id: "lunch-mixed-vegetables", number: "LD1", name: "Mixed Chinese Vegetables", chineseName: "杂菜", category: "Lunch Special", description: "Served with pork fried rice. Choice of wonton soup, egg drop soup, egg roll, or canned soda.", prices: { order: 9.45 }, options: lunchOptions },
   { id: "lunch-chicken-mixed-vegetables", number: "LD2", name: "Chicken with Mixed Vegetables", chineseName: "什锦鸡", category: "Lunch Special", description: "Served with pork fried rice. Choice of wonton soup, egg drop soup, egg roll, or canned soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-shrimp-broccoli", number: "LD4", name: "Shrimp with Broccoli", chineseName: "西兰花虾仁", category: "Lunch Special", description: "Served with pork fried rice. Choice of wonton soup, egg drop soup, egg roll, or canned soda.", prices: { order: 9.75 }, options: lunchOptions },
   { id: "lunch-chicken-broccoli", number: "LD3", name: "Chicken with Broccoli", chineseName: "西兰花鸡", category: "Lunch Special", description: "Served with pork fried rice. Choice of wonton soup, egg drop soup, egg roll, or canned soda.", prices: { order: 9.75 }, options: lunchOptions },
@@ -329,8 +328,8 @@ const menuItemSplits: Record<string, MenuSplit[]> = {
     { id: "chicken-mai-fun", number: "104B", name: "Chicken Mai Fun", chineseName: "鸡米粉" }
   ],
   "pork-chow-fun": [
-    { id: "pork-chow-fun", number: "105A", name: "Pork Chow Fun", chineseName: "猪河粉" },
-    { id: "pork-mai-fun", number: "105B", name: "Pork Mai Fun", chineseName: "猪米粉" }
+    { id: "pork-chow-fun", number: "105A", name: "Pork Chow Fun", chineseName: "叉烧河粉" },
+    { id: "pork-mai-fun", number: "105B", name: "Pork Mai Fun", chineseName: "叉烧米粉" }
   ],
   "shrimp-chow-fun": [
     { id: "shrimp-chow-fun", number: "106A", name: "Shrimp Chow Fun", chineseName: "虾河粉" },
@@ -373,24 +372,24 @@ const menuItemSplits: Record<string, MenuSplit[]> = {
     { id: "combo-hunan-chicken", number: "C10B", name: "Hunan Chicken", chineseName: "湖南鸡" }
   ],
   "combo-string-beans-garlic": [
-    { id: "combo-string-beans-chicken-garlic", number: "C12A", name: "String Beans with Chicken in Garlic Sauce", chineseName: "鱼香四季豆鸡" },
-    { id: "combo-string-beans-shrimp-garlic", number: "C12B", name: "String Beans with Shrimp in Garlic Sauce", chineseName: "鱼香四季豆虾" }
+    { id: "combo-string-beans-chicken-garlic", number: "C12A", name: "String Beans with Chicken in Garlic Sauce", chineseName: "四季豆鸡" },
+    { id: "combo-string-beans-shrimp-garlic", number: "C12B", name: "String Beans with Shrimp in Garlic Sauce", chineseName: "四季豆虾" }
   ],
   "combo-eggplant-garlic": [
-    { id: "combo-eggplant-chicken-garlic", number: "C14A", name: "Eggplant with Chicken in Garlic Sauce", chineseName: "鱼香茄子鸡" },
-    { id: "combo-eggplant-shrimp-garlic", number: "C14B", name: "Eggplant with Shrimp in Garlic Sauce", chineseName: "鱼香茄子虾" }
+    { id: "combo-eggplant-chicken-garlic", number: "C14A", name: "Eggplant with Chicken in Garlic Sauce", chineseName: "茄子鸡" },
+    { id: "combo-eggplant-shrimp-garlic", number: "C14B", name: "Eggplant with Shrimp in Garlic Sauce", chineseName: "茄子虾" }
   ],
   "mongolian-beef-chicken": [
     { id: "mongolian-beef", number: "155A", name: "Mongolian Beef", chineseName: "蒙古牛" },
     { id: "mongolian-chicken", number: "155B", name: "Mongolian Chicken", chineseName: "蒙古鸡" }
   ],
   "coconut-shrimp-or-chicken": [
-    { id: "coconut-shrimp-chef", number: "158A", name: "Coconut Shrimp", chineseName: "椰香虾" },
-    { id: "coconut-chicken-chef", number: "158B", name: "Coconut Chicken", chineseName: "椰香鸡" }
+    { id: "coconut-shrimp-chef", number: "158A", name: "Coconut Shrimp", chineseName: "椰子虾" },
+    { id: "coconut-chicken-chef", number: "158B", name: "Coconut Chicken", chineseName: "椰子鸡" }
   ],
   "diet-string-bean": [
-    { id: "diet-string-bean-chicken", number: "D6A", name: "String Bean Chicken", chineseName: "清蒸四季豆鸡" },
-    { id: "diet-string-bean-shrimp", number: "D6B", name: "String Bean Shrimp", chineseName: "清蒸四季豆虾" }
+    { id: "diet-string-bean-chicken", number: "D6A", name: "String Bean Chicken", chineseName: "水煮四季豆鸡" },
+    { id: "diet-string-bean-shrimp", number: "D6B", name: "String Bean Shrimp", chineseName: "水煮四季豆虾" }
   ],
   "lunch-string-bean-chicken-shrimp": [
     { id: "lunch-string-bean-chicken", number: "LD5A", name: "String Bean Chicken", chineseName: "四季豆鸡" },
