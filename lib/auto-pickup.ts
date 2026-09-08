@@ -8,48 +8,31 @@ export type AutoPickupOrder = {
   scheduled_pickup_time?: string | null;
 };
 
-export function easternTimeParts(now = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23"
-  }).formatToParts(now);
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return {
-    date: easternDateKey(now),
-    hour: Number(get("hour")),
-    minute: Number(get("minute"))
-  };
+// Add days to a "YYYY-MM-DD" Eastern date key. Anchoring on UTC noon (never near a DST
+// transition) avoids wall-clock edge cases when re-deriving the Eastern date.
+export function addEasternDays(dateKey: string, days: number) {
+  const noon = new Date(`${dateKey}T12:00:00Z`);
+  return easternDateKey(new Date(noon.getTime() + days * 24 * 60 * 60 * 1000));
 }
 
-// The cron runs at 05:00 UTC. On Vercel Hobby it may start at any point in
-// the following hour, which is 12:00-12:59 AM EST or 1:00-1:59 AM EDT.
-// Both windows must close the previous New York business day.
-export function targetBusinessDate(now = new Date()) {
-  const { hour } = easternTimeParts(now);
-  if (hour < 2) return easternDateKey(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+// The cutoff is exclusive: an order is only closed once its entire business date (creation AND
+// any scheduled pickup) is strictly before this date. The daily cron passes no `date`, so the
+// cutoff is always "today" — sweeping every order left over from yesterday and any earlier day
+// that was somehow missed. This makes the close-out robust to the cron firing late, being
+// delayed by the platform, or even skipping a day outright: whenever it next runs, it fully
+// catches up instead of only ever handling one exact calendar day (the previous design compared
+// against a single computed "target date" and silently missed everything else if that guess was
+// wrong or the cron didn't fire in the expected hour).
+// A manually supplied `date` (admin testing/backfill) closes out that day and everything before
+// it, by using the following day as the exclusive cutoff.
+export function resolveAutoPickupCutoff(requestedDate: string | null, now = new Date()) {
+  if (requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return addEasternDays(requestedDate, 1);
   return easternDateKey(now);
 }
 
-export function resolveAutoPickupDate(requestedDate: string | null, now = new Date()) {
-  return requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : targetBusinessDate(now);
-}
-
-export function queryWindowForDateKey(dateKey: string) {
-  const noon = new Date(`${dateKey}T12:00:00Z`);
-  return {
-    start: new Date(noon.getTime() - 36 * 60 * 60 * 1000).toISOString(),
-    end: new Date(noon.getTime() + 36 * 60 * 60 * 1000).toISOString()
-  };
-}
-
-export function isAutoPickupCandidate(order: AutoPickupOrder, date: string) {
-  if (!order.created_at || easternDateKey(new Date(order.created_at)) !== date) return false;
+export function isAutoPickupCandidate(order: AutoPickupOrder, cutoffDateExclusive: string) {
+  if (!order.created_at || easternDateKey(new Date(order.created_at)) >= cutoffDateExclusive) return false;
   if (!activeOrderStatuses.includes(order.status as (typeof activeOrderStatuses)[number])) return false;
-  if (order.scheduled_pickup_time && easternDateKey(new Date(order.scheduled_pickup_time)) > date) return false;
+  if (order.scheduled_pickup_time && easternDateKey(new Date(order.scheduled_pickup_time)) >= cutoffDateExclusive) return false;
   return true;
 }

@@ -3,7 +3,7 @@ import { menuItems } from "@/data/menu";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { appendOrderToGoogleSheets } from "@/lib/google-sheets";
 import { closedOrderingMessage, isLunchAvailable, isLunchItem, lunchAvailabilityMessage, nextOpeningLabel, validateScheduledPickupISO } from "@/lib/order-rules";
-import { getOperationalSettings, orderingAllowed } from "@/lib/operations";
+import { easternDateKey, getOperationalSettings, orderingAllowed } from "@/lib/operations";
 import { calculateCart, customizationUpcharge, getItemPrice, hasReviewPrice } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode, validatePromo } from "@/lib/promo";
 import { addonPrices, restaurant } from "@/lib/restaurant";
@@ -17,8 +17,17 @@ const orderingUnavailableMessage = `Online ordering is temporarily unavailable. 
 const maxQuantityPerItem = 50;
 const maxItemsPerOrder = 100;
 
-function createOrderNumber() {
-  return `CD-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+// Sequential per-day order numbers (CD-200, CD-201, ...), reset back to 200 at the start of each
+// Eastern business date. Allocated via a Postgres function (see sql/schema.sql
+// next_order_number) so concurrent checkouts never get the same number — the upsert + increment
+// happens atomically in a single statement instead of a racy read-then-write in app code.
+async function nextOrderNumber(supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>) {
+  const businessDate = easternDateKey();
+  const { data, error } = await supabase.rpc("next_order_number", { p_business_date: businessDate });
+  if (error || typeof data !== "number") {
+    throw error ?? new Error("next_order_number returned no value");
+  }
+  return `CD-${data}`;
 }
 
 function toSupabaseErrorLog(error: { message: string; details?: string; hint?: string; code?: string }) {
@@ -138,7 +147,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: orderingUnavailableMessage }, { status: 503 });
   }
 
-  const orderNumber = createOrderNumber();
+  let orderNumber: string;
+  try {
+    orderNumber = await nextOrderNumber(supabase);
+  } catch (numberError) {
+    console.error("[checkout] Failed to allocate sequential order number", {
+      error: numberError instanceof Error ? numberError.message : numberError
+    });
+    return NextResponse.json({ error: orderingUnavailableMessage }, { status: 503 });
+  }
 
   // Server-authoritative totals: subtotal from the repriced items, promo validated
   // against the database, tax/fee/tip recomputed in calculateCart.

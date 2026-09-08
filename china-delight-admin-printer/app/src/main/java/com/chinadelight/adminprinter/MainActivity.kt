@@ -61,7 +61,9 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var webStatus: TextView
 
-    private val orderNumberRegex = Regex("\\b(?:CD|TEST)-\\d{6}-[A-Z0-9]{3}\\b", RegexOption.IGNORE_CASE)
+    // Real orders are sequential per day, e.g. "CD-200" (see app/api/checkout/route.ts
+    // nextOrderNumber). Test orders keep their own longer random format, e.g. "TEST-123456-ABC".
+    private val orderNumberRegex = Regex("\\b(?:CD-\\d{1,6}|TEST-\\d{6}-[A-Z0-9]{3})\\b", RegexOption.IGNORE_CASE)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -162,6 +164,14 @@ class MainActivity : Activity() {
     private fun buildWebView() {
         webView = WebView(this).apply {
             setBackgroundColor(Color.WHITE)
+            // Fixes "scrolling down leaves the bottom half of the screen blank": some Android
+            // WebView versions default to a software rendering layer that fails to redraw the
+            // newly-scrolled-into-view content until something else forces a repaint. Forcing a
+            // hardware layer makes the WebView invalidate/redraw correctly during scroll. This
+            // WebView is the sole scrolling element in its layout (weight-based LinearLayout, no
+            // outer NestedScrollingParent), so nested scrolling was never doing anything useful
+            // and risked its own touch/redraw conflicts — removed below.
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             @Suppress("DEPRECATION")
@@ -170,7 +180,6 @@ class MainActivity : Activity() {
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.userAgentString = mobileUserAgent
-            isNestedScrollingEnabled = true
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             addJavascriptInterface(PrintBridge(), "AndroidPrintBridge")
@@ -301,7 +310,7 @@ class MainActivity : Activity() {
     /** JS injected into the admin page: adds a "Print to Epson" button to each order card. */
     private fun injectionJs(): String = """
         (function(){
-          var ORDER = /\b(?:CD|TEST)-\d{6}-[A-Z0-9]{3}\b/i;
+          var ORDER = /\b(?:CD-\d{1,6}|TEST-\d{6}-[A-Z0-9]{3})\b/i;
           function makeBtn(orderNumber){
             var b = document.createElement('button');
             b.textContent = '🖨 Print to Epson';

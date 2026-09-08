@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAdminCookieName, isValidAdminSession } from "@/lib/admin-auth";
-import {
-  isAutoPickupCandidate,
-  queryWindowForDateKey,
-  resolveAutoPickupDate,
-  type AutoPickupOrder
-} from "@/lib/auto-pickup";
+import { isAutoPickupCandidate, resolveAutoPickupCutoff, type AutoPickupOrder } from "@/lib/auto-pickup";
 import { updateOrderStatusInGoogleSheets } from "@/lib/google-sheets";
 import { activeOrderStatuses } from "@/lib/order-status";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
@@ -35,21 +30,24 @@ async function runAutoPickup(request: Request) {
 
   const url = new URL(request.url);
   const manual = isManualRun(url);
-  const date = resolveAutoPickupDate(url.searchParams.get("date"));
-  const window = queryWindowForDateKey(date);
+  const cutoff = resolveAutoPickupCutoff(url.searchParams.get("date"));
 
+  // No date range in the query itself — fetch every order that is still active (there should
+  // never be more than a handful at once) and let isAutoPickupCandidate decide against the
+  // cutoff. This way a cron run that fires late, gets delayed, or even skips a day outright
+  // still closes out everything left over the next time it runs, instead of only ever being
+  // able to handle one exact calendar day.
   const { data, error } = await supabase
     .from("orders")
     .select("order_number, status, created_at, scheduled_pickup_time")
-    .gte("created_at", window.start)
-    .lt("created_at", window.end)
+    .in("status", activeOrderStatuses)
     .limit(2000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const candidates = ((data ?? []) as AutoPickupOrder[]).filter((order) => isAutoPickupCandidate(order, date));
+  const candidates = ((data ?? []) as AutoPickupOrder[]).filter((order) => isAutoPickupCandidate(order, cutoff));
 
   if (candidates.length === 0) {
-    return NextResponse.json({ ok: true, date, matched: 0, updated: 0 });
+    return NextResponse.json({ ok: true, cutoff, manual, matched: 0, updated: 0 });
   }
 
   const orderNumbers = candidates.map((order) => order.order_number);
@@ -74,8 +72,8 @@ async function runAutoPickup(request: Request) {
     )
   );
 
-  console.log("[auto-pickup] marked orders picked_up", { date, matched: candidates.length, updated: updated?.length ?? 0 });
-  return NextResponse.json({ ok: true, date, manual, matched: candidates.length, updated: updated?.length ?? 0, orderNumbers: [...updatedOrderNumbers] });
+  console.log("[auto-pickup] marked orders picked_up", { cutoff, matched: candidates.length, updated: updated?.length ?? 0 });
+  return NextResponse.json({ ok: true, cutoff, manual, matched: candidates.length, updated: updated?.length ?? 0, orderNumbers: [...updatedOrderNumbers] });
 }
 
 export async function GET(request: Request) {

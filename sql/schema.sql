@@ -167,11 +167,43 @@ create table if not exists public.phone_verifications (
 create index if not exists phone_verifications_phone_idx on public.phone_verifications(phone);
 create index if not exists phone_verifications_expires_at_idx on public.phone_verifications(expires_at);
 
+-- Real customer order numbers (CD-200, CD-201, ...). One row per Eastern business date, holding
+-- the last number handed out that day; a new date starts a fresh row so numbering resets to 200
+-- every day. Test orders (see app/api/admin/test-order) keep their own separate TEST- scheme and
+-- never touch this table.
+create table if not exists public.order_number_counters (
+  business_date text primary key,
+  last_number integer not null,
+  updated_at timestamptz not null default now()
+);
+
+-- Atomically allocates the next order number for a business date: inserts the row starting at
+-- 200 if this is the first order of the day, otherwise increments the existing row. The
+-- insert-or-increment happens as a single statement, so concurrent checkouts can never be
+-- handed the same number.
+create or replace function public.next_order_number(p_business_date text)
+returns integer
+language plpgsql
+as $$
+declare
+  v_number integer;
+begin
+  insert into public.order_number_counters (business_date, last_number)
+  values (p_business_date, 200)
+  on conflict (business_date) do update
+    set last_number = public.order_number_counters.last_number + 1,
+        updated_at = now()
+  returning last_number into v_number;
+  return v_number;
+end;
+$$;
+
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 alter table public.operational_settings enable row level security;
 alter table public.phone_verifications enable row level security;
 alter table public.promo_codes enable row level security;
+alter table public.order_number_counters enable row level security;
 
 -- The app uses the service role key on the server for admin reads/writes.
 -- Public browser clients do not receive direct table access by default.
