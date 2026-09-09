@@ -23,6 +23,12 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
   const query = searchParams.get("q")?.trim();
+  // Bumped from a hardcoded 500 (which silently dropped older orders from search/history once
+  // the restaurant passed 500 orders all-time, even though this query is already sorted
+  // newest-first) and now actually honors a caller-supplied `limit`, bounded to a sane max.
+  const maxLimit = 2000;
+  const requestedLimit = Number(searchParams.get("limit"));
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, maxLimit) : maxLimit;
 
   let builder = supabase
     .from("orders")
@@ -31,7 +37,7 @@ export async function GET(request: Request) {
 
   if (status && status !== "all") builder = builder.eq("status", status);
 
-  const { data, error } = await builder.limit(500);
+  const { data, error } = await builder.limit(limit);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const orders = data ?? [];
   if (!query) return NextResponse.json({ orders });

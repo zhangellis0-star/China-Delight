@@ -443,19 +443,13 @@ export function AdminDashboard() {
   const [printStatusLoaded, setPrintStatusLoaded] = useState(false);
   const [addItemSearch, setAddItemSearch] = useState("");
   const [newItemDraft, setNewItemDraft] = useState<NewItemDraft | null>(null);
-  const previousNewOrders = useRef<Set<string>>(new Set());
   const ordersRef = useRef<AdminOrder[]>([]);
   const updatingOrdersRef = useRef<Set<string>>(new Set());
-  const editingOrderRef = useRef(false);
   const kitchenPrintStatusRef = useRef<Record<string, KitchenPrintState>>({});
   const autoPrintAttemptedRef = useRef<Set<string>>(new Set());
   const newOrderAlertIntervalRef = useRef<number | null>(null);
   const activeAudioContextsRef = useRef<Set<AudioContext>>(new Set());
   const soundTimeoutsRef = useRef<Set<number>>(new Set());
-
-  useEffect(() => {
-    editingOrderRef.current = Boolean(editingOrder);
-  }, [editingOrder]);
 
   useEffect(() => {
     const saved = loadKitchenPrintStatus();
@@ -616,15 +610,14 @@ export function AdminDashboard() {
   }
 
   const loadOrders = useCallback(
-    async (options: { manual?: boolean } = {}) => {
-      if (updatingOrdersRef.current.size > 0) {
-        if (options.manual) setRefreshError("Finish saving the status change before refreshing.");
-        return;
-      }
-      if (editingOrderRef.current) {
-        if (options.manual) setRefreshError("Finish editing the order before refreshing.");
-        return;
-      }
+    async (_options: { manual?: boolean } = {}) => {
+      // Refreshing always runs now — it used to skip entirely (even for a manual "Refresh"
+      // click) whenever an order was mid-save or the Edit-order panel was open, which could hide
+      // brand-new orders (and their sound alert) indefinitely. The Edit-order draft is a fully
+      // independent snapshot (see openEditOrder) so refreshing the list underneath it is safe.
+      // For an order whose status update is still in flight, keep showing its optimistic local
+      // version instead of the server's (about-to-be-stale) one, so a refresh landing mid-save
+      // can't flicker the status back before the update's own response arrives.
       setRefreshing(true);
       try {
         const response = await fetch("/api/orders");
@@ -635,12 +628,14 @@ export function AdminDashboard() {
         }
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Unable to refresh orders.");
-        const serverOrders = ((data.orders ?? []) as AdminOrder[]).map(normalizeAdminOrder);
+        const inFlight = updatingOrdersRef.current;
+        const currentByNumber = new Map(ordersRef.current.map((order) => [order.order_number, order]));
+        const serverOrders = ((data.orders ?? []) as AdminOrder[])
+          .map(normalizeAdminOrder)
+          .map((order) => (inFlight.has(order.order_number) ? currentByNumber.get(order.order_number) ?? order : order));
         const serverOrderNumbers = new Set(serverOrders.map((order) => order.order_number));
         const localOrders = normalizeLocalOrder(window.localStorage.getItem("china-delight-last-order")).map(normalizeAdminOrder).filter((order) => !serverOrderNumbers.has(order.order_number));
         const nextOrders = [...serverOrders, ...localOrders].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
-        const nextNew = new Set(nextOrders.filter((order) => order.status === "new").map((order) => order.order_number));
-        previousNewOrders.current = nextNew;
         ordersRef.current = nextOrders;
         setOrders(nextOrders);
         setLastUpdated(new Date());
@@ -817,7 +812,6 @@ export function AdminDashboard() {
     setOrders(optimisticOrders);
     if (nextStatus !== "new") {
       const remainingNewOrders = new Set(optimisticOrders.filter((order) => order.status === "new").map((order) => order.order_number));
-      previousNewOrders.current = remainingNewOrders;
       if (remainingNewOrders.size === 0) stopNewOrderAlert();
     }
     try {
@@ -834,7 +828,6 @@ export function AdminDashboard() {
         setOrders(confirmedOrders);
         if (data.order.status && data.order.status !== "new") {
           const nextNewOrders = new Set(confirmedOrders.filter((order) => order.status === "new").map((order) => order.order_number));
-          previousNewOrders.current = nextNewOrders;
           if (nextNewOrders.size === 0) stopNewOrderAlert();
         }
       }
@@ -948,9 +941,6 @@ export function AdminDashboard() {
   }
 
   function closeEditOrder() {
-    // Clear the ref synchronously (the useEffect runs after render) so a save-triggered
-    // refresh isn't blocked by the "finish editing" guard.
-    editingOrderRef.current = false;
     setEditingOrder(null);
     setAddItemSearch("");
     setNewItemDraft(null);
