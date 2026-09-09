@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { addEasternDays, isAutoPickupCandidate, resolveAutoPickupCutoff, type AutoPickupOrder } from "@/lib/auto-pickup";
+import { addEasternDays, currentAutoPickupCutoff, isAutoPickupCandidate, resolveAutoPickupCutoff, type AutoPickupOrder } from "@/lib/auto-pickup";
 
-test("Vercel uses one daily cron (Hobby plan limit — see lib/auto-pickup.ts for why exact fire time no longer matters)", () => {
+test("Vercel cron is a resilience backup only — the real decision comes from live store hours", () => {
   const config = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
   assert.deepEqual(config.crons, [{ path: "/api/admin/auto-pickup", schedule: "0 5 * * *" }]);
 });
@@ -14,17 +14,26 @@ test("addEasternDays advances the Eastern date key across a DST transition", () 
   assert.equal(addEasternDays("2026-11-01", 1), "2026-11-02");
 });
 
-test("with no requested date, the cutoff is always today (whatever time the cron actually fires)", () => {
-  assert.equal(resolveAutoPickupCutoff(null, new Date("2026-08-28T05:00:00Z")), "2026-08-28");
-  // Even if the platform delays the cron by hours, "today" in Eastern time is still the correct
-  // cutoff — there is no fragile hour-of-day guess to get wrong anymore.
-  assert.equal(resolveAutoPickupCutoff(null, new Date("2026-08-28T14:00:00Z")), "2026-08-28");
-  assert.equal(resolveAutoPickupCutoff(null, new Date("2026-08-28T23:59:00Z")), "2026-08-28");
+test("while the store is open, today is excluded from the cutoff (its orders are still in progress)", () => {
+  // Friday 2026-08-28, 3:00 PM ET — well within Friday's 11am-10:30pm hours.
+  assert.equal(currentAutoPickupCutoff(new Date("2026-08-28T19:00:00Z")), "2026-08-28");
+});
+
+test("the exact same clock time is 'closed' on a Mon-Thu/Sun day but still 'open' on Fri/Sat, because hours vary by day", () => {
+  // Thursday 2026-08-27, 10:15 PM ET — Thursday closes at 10:00 PM, so this is after close.
+  assert.equal(currentAutoPickupCutoff(new Date("2026-08-28T02:15:00Z")), "2026-08-28");
+  // Friday 2026-08-28, 10:15 PM ET — Friday closes at 10:30 PM, so this is still open.
+  assert.equal(currentAutoPickupCutoff(new Date("2026-08-29T02:15:00Z")), "2026-08-28");
+});
+
+test("with no requested date, resolveAutoPickupCutoff defers entirely to live store hours", () => {
+  assert.equal(resolveAutoPickupCutoff(null, new Date("2026-08-28T19:00:00Z")), currentAutoPickupCutoff(new Date("2026-08-28T19:00:00Z")));
+  assert.equal(resolveAutoPickupCutoff(null, new Date("2026-08-28T02:15:00Z")), currentAutoPickupCutoff(new Date("2026-08-28T02:15:00Z")));
 });
 
 test("a manually requested date closes that day and everything before it (cutoff is the day after)", () => {
   assert.equal(resolveAutoPickupCutoff("2026-07-10"), "2026-07-11");
-  assert.equal(resolveAutoPickupCutoff("not-a-date", new Date("2026-07-15T05:30:00Z")), "2026-07-15");
+  assert.equal(resolveAutoPickupCutoff("not-a-date", new Date("2026-07-15T05:30:00Z")), currentAutoPickupCutoff(new Date("2026-07-15T05:30:00Z")));
 });
 
 test("only active orders strictly before the cutoff are candidates", () => {
@@ -46,8 +55,8 @@ test("only active orders strictly before the cutoff are candidates", () => {
 
 test("a cron that missed several days still closes every leftover order, not just yesterday", () => {
   // This is the actual bug fix: the old design only ever matched one exact target date, so a
-  // delayed/skipped cron permanently missed anything older. The new cutoff sweep catches up on
-  // an arbitrarily large backlog the next time it runs.
+  // delayed/skipped cron permanently missed anything older. The cutoff sweep catches up on an
+  // arbitrarily large backlog the next time it runs.
   const cutoff = "2026-08-29";
   const threeDaysAgo: AutoPickupOrder = { order_number: "2001", status: "new", created_at: "2026-08-25T16:00:00Z", scheduled_pickup_time: null };
   const lastWeek: AutoPickupOrder = { order_number: "2002", status: "accepted", created_at: "2026-08-20T12:00:00Z", scheduled_pickup_time: null };

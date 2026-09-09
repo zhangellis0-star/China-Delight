@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getAdminCookieName, isValidAdminSession } from "@/lib/admin-auth";
+import { currentAutoPickupCutoff } from "@/lib/auto-pickup";
+import { runAutoPickupSweep } from "@/lib/auto-pickup-sweep";
 import { sendOrderAcceptedEmail } from "@/lib/email";
 import { updateOrderStatusInGoogleSheets } from "@/lib/google-sheets";
+import { isStoreOpen } from "@/lib/order-rules";
 import { editableOrderStatuses } from "@/lib/order-status";
 import { restaurant } from "@/lib/restaurant";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
@@ -19,6 +22,19 @@ export async function GET(request: Request) {
   }
   const supabase = getSupabaseAdmin();
   if (!supabase) return NextResponse.json({ orders: [] });
+
+  // Live, hours-driven auto-complete: the admin dashboard polls this endpoint every 15s while
+  // it's open, so checking here — only when the store's real hours (which vary by day) say it's
+  // currently closed — closes out any leftover active orders automatically, right around actual
+  // closing time, with no fixed clock time involved. The daily cron is just a backup for days
+  // nobody has the dashboard open. Failure here never blocks the order list itself.
+  if (!isStoreOpen()) {
+    try {
+      await runAutoPickupSweep(supabase, currentAutoPickupCutoff());
+    } catch (sweepError) {
+      console.warn("[orders] Live auto-pickup sweep failed", { error: sweepError instanceof Error ? sweepError.message : sweepError });
+    }
+  }
 
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");

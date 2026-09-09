@@ -1,3 +1,4 @@
+import { isStoreOpen } from "@/lib/order-rules";
 import { activeOrderStatuses } from "@/lib/order-status";
 import { easternDateKey } from "@/lib/operations";
 
@@ -15,19 +16,29 @@ export function addEasternDays(dateKey: string, days: number) {
   return easternDateKey(new Date(noon.getTime() + days * 24 * 60 * 60 * 1000));
 }
 
+// Whether today's orders should already be included in the sweep: only once the store's actual
+// hours (see lib/order-rules.ts storeWindow — these vary by day: 10pm Mon-Thu/Sun, 10:30pm
+// Fri-Sat) say it's currently closed. This is deliberately the physical store hours, not the
+// earlier online-ordering cutoff, since a customer can still be picking up an already-placed
+// order right up until the store itself closes. While the store is open, today stays excluded
+// (its orders are still in progress); the moment real hours say it's closed, today is included.
+export function currentAutoPickupCutoff(now = new Date()) {
+  const today = easternDateKey(now);
+  return isStoreOpen(now) ? today : addEasternDays(today, 1);
+}
+
 // The cutoff is exclusive: an order is only closed once its entire business date (creation AND
-// any scheduled pickup) is strictly before this date. The daily cron passes no `date`, so the
-// cutoff is always "today" — sweeping every order left over from yesterday and any earlier day
-// that was somehow missed. This makes the close-out robust to the cron firing late, being
-// delayed by the platform, or even skipping a day outright: whenever it next runs, it fully
-// catches up instead of only ever handling one exact calendar day (the previous design compared
-// against a single computed "target date" and silently missed everything else if that guess was
-// wrong or the cron didn't fire in the expected hour).
+// any scheduled pickup) is strictly before this date. There is no fixed clock time baked in
+// anywhere — this is driven entirely by the store's real, day-varying hours (currentAutoPickupCutoff
+// above), checked live every time this runs. That makes the close-out automatically robust to
+// being checked at any moment: whenever it runs, it reflects whatever "closed" actually means
+// right now, so a missed check, a delayed cron, or a skipped day all self-correct the next time
+// something calls this instead of only ever handling one exact pre-computed calendar day.
 // A manually supplied `date` (admin testing/backfill) closes out that day and everything before
 // it, by using the following day as the exclusive cutoff.
 export function resolveAutoPickupCutoff(requestedDate: string | null, now = new Date()) {
   if (requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return addEasternDays(requestedDate, 1);
-  return easternDateKey(now);
+  return currentAutoPickupCutoff(now);
 }
 
 export function isAutoPickupCandidate(order: AutoPickupOrder, cutoffDateExclusive: string) {
