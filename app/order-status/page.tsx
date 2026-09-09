@@ -60,7 +60,7 @@ export default function OrderStatusPage() {
       <form onSubmit={lookup} className="mt-6 grid gap-4 rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
         <label className="grid gap-1 font-bold">
           Order number
-          <input required value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} placeholder="CD-200" className="focus-ring h-12 rounded-md border border-stone-300 px-3" />
+          <input required value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} placeholder="CD-251" className="focus-ring h-12 rounded-md border border-stone-300 px-3" />
         </label>
         <label className="grid gap-1 font-bold">
           Phone number

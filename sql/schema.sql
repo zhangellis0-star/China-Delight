@@ -167,8 +167,8 @@ create table if not exists public.phone_verifications (
 create index if not exists phone_verifications_phone_idx on public.phone_verifications(phone);
 create index if not exists phone_verifications_expires_at_idx on public.phone_verifications(expires_at);
 
--- Real customer order numbers (CD-200, CD-201, ...). One row per Eastern business date, holding
--- the last number handed out that day; a new date starts a fresh row so numbering resets to 200
+-- Real customer order numbers (CD-251, CD-252, ...). One row per Eastern business date, holding
+-- the last number handed out that day; a new date starts a fresh row so numbering resets to 251
 -- every day. Test orders (see app/api/admin/test-order) keep their own separate TEST- scheme and
 -- never touch this table.
 create table if not exists public.order_number_counters (
@@ -178,7 +178,7 @@ create table if not exists public.order_number_counters (
 );
 
 -- Atomically allocates the next order number for a business date: inserts the row starting at
--- 200 if this is the first order of the day, otherwise increments the existing row. The
+-- 251 if this is the first order of the day, otherwise increments the existing row. The
 -- insert-or-increment happens as a single statement, so concurrent checkouts can never be
 -- handed the same number.
 create or replace function public.next_order_number(p_business_date text)
@@ -189,7 +189,7 @@ declare
   v_number integer;
 begin
   insert into public.order_number_counters (business_date, last_number)
-  values (p_business_date, 200)
+  values (p_business_date, 251)
   on conflict (business_date) do update
     set last_number = public.order_number_counters.last_number + 1,
         updated_at = now()

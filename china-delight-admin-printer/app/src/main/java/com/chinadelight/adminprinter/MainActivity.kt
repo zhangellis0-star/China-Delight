@@ -61,7 +61,7 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var webStatus: TextView
 
-    // Real orders are sequential per day, e.g. "CD-200" (see app/api/checkout/route.ts
+    // Real orders are sequential per day, e.g. "CD-251" (see app/api/checkout/route.ts
     // nextOrderNumber). Test orders keep their own longer random format, e.g. "TEST-123456-ABC".
     private val orderNumberRegex = Regex("\\b(?:CD-\\d{1,6}|TEST-\\d{6}-[A-Z0-9]{3})\\b", RegexOption.IGNORE_CASE)
 

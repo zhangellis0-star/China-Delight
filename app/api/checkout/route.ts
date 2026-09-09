@@ -17,7 +17,7 @@ const orderingUnavailableMessage = `Online ordering is temporarily unavailable. 
 const maxQuantityPerItem = 50;
 const maxItemsPerOrder = 100;
 
-// Sequential per-day order numbers (CD-200, CD-201, ...), reset back to 200 at the start of each
+// Sequential per-day order numbers (CD-251, CD-252, ...), reset back to 251 at the start of each
 // Eastern business date. Allocated via a Postgres function (see sql/schema.sql
 // next_order_number) so concurrent checkouts never get the same number — the upsert + increment
 // happens atomically in a single statement instead of a racy read-then-write in app code.
