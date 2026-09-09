@@ -86,6 +86,7 @@ type KitchenPrintState = {
   updatedAt: string;
 };
 type EditOrderState = {
+  orderId?: string;
   orderNumber: string;
   customerName: string;
   customerPhone: string;
@@ -260,6 +261,15 @@ function loadKitchenPrintStatus() {
   }
 }
 
+// order_number resets daily and is not globally unique (a still-active future-scheduled order
+// can share a number with a brand-new order once the counter comes back around), so every piece
+// of local bookkeeping that tracks a *specific* order (in-flight updates, print status, the
+// selected/editing order) keys off the database id instead. Falls back to order_number only for
+// the one local-fallback order (no id) that can appear when Supabase is unreachable.
+function orderKey(order: Pick<AdminOrder, "id" | "order_number">) {
+  return order.id ?? order.order_number;
+}
+
 function shouldAutoPrintOrder(order: AdminOrder) {
   if (!order.id || order.status !== "new") return false;
   return order.payment_method !== "stripe" || order.payment_status === "paid";
@@ -416,8 +426,8 @@ export function AdminDashboard() {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [updatingOrders, setUpdatingOrders] = useState<Set<string>>(new Set());
   const [customReadyMinutes, setCustomReadyMinutes] = useState<Record<string, string>>({});
-  const [acceptingOrder, setAcceptingOrder] = useState<string | null>(null);
-  const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | null>(null);
+  const [acceptingOrder, setAcceptingOrder] = useState<AdminOrder | null>(null);
+  const [selectedOrderKey, setSelectedOrderKey] = useState<string | null>(null);
   const [operations, setOperations] = useState<AdminOperations | null>(null);
   const [operationsError, setOperationsError] = useState<string | null>(null);
   const [soldOutSelection, setSoldOutSelection] = useState(menuItems[0]?.id ?? "");
@@ -629,10 +639,10 @@ export function AdminDashboard() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Unable to refresh orders.");
         const inFlight = updatingOrdersRef.current;
-        const currentByNumber = new Map(ordersRef.current.map((order) => [order.order_number, order]));
+        const currentByKey = new Map(ordersRef.current.map((order) => [orderKey(order), order]));
         const serverOrders = ((data.orders ?? []) as AdminOrder[])
           .map(normalizeAdminOrder)
-          .map((order) => (inFlight.has(order.order_number) ? currentByNumber.get(order.order_number) ?? order : order));
+          .map((order) => (inFlight.has(orderKey(order)) ? currentByKey.get(orderKey(order)) ?? order : order));
         const serverOrderNumbers = new Set(serverOrders.map((order) => order.order_number));
         const localOrders = normalizeLocalOrder(window.localStorage.getItem("china-delight-last-order")).map(normalizeAdminOrder).filter((order) => !serverOrderNumbers.has(order.order_number));
         const nextOrders = [...serverOrders, ...localOrders].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
@@ -787,48 +797,49 @@ export function AdminDashboard() {
     }
   }
 
-  async function acceptWithReadyTime(orderNumber: string, minutes: number) {
+  async function acceptWithReadyTime(order: AdminOrder, minutes: number) {
     setAcceptingOrder(null);
-    setCustomReadyMinutes((current) => ({ ...current, [orderNumber]: "" }));
-    await updateStatus(orderNumber, "accepted", minutes);
+    setCustomReadyMinutes((current) => ({ ...current, [orderKey(order)]: "" }));
+    await updateStatus(order, "accepted", minutes);
   }
 
   async function confirmCustomAccept() {
     if (!acceptingOrder) return;
-    const orderNumber = acceptingOrder;
-    const minutes = Math.round(Number(customReadyMinutes[orderNumber]));
+    const order = acceptingOrder;
+    const minutes = Math.round(Number(customReadyMinutes[orderKey(order)]));
     if (!Number.isFinite(minutes) || minutes <= 0) {
       setRefreshError("Enter a custom ready time greater than 0 minutes.");
       return;
     }
-    await acceptWithReadyTime(orderNumber, minutes);
+    await acceptWithReadyTime(order, minutes);
   }
 
-  async function updateStatus(orderNumber: string, nextStatus: OrderStatus, estimatedReadyMinutes?: number) {
-    updatingOrdersRef.current = new Set(updatingOrdersRef.current).add(orderNumber);
+  async function updateStatus(targetOrder: AdminOrder, nextStatus: OrderStatus, estimatedReadyMinutes?: number) {
+    const key = orderKey(targetOrder);
+    updatingOrdersRef.current = new Set(updatingOrdersRef.current).add(key);
     setUpdatingOrders(new Set(updatingOrdersRef.current));
-    const optimisticOrders = ordersRef.current.map((order) => (order.order_number === orderNumber ? { ...order, status: nextStatus } : order));
+    const optimisticOrders = ordersRef.current.map((order) => (orderKey(order) === key ? { ...order, status: nextStatus } : order));
     ordersRef.current = optimisticOrders;
     setOrders(optimisticOrders);
     if (nextStatus !== "new") {
-      const remainingNewOrders = new Set(optimisticOrders.filter((order) => order.status === "new").map((order) => order.order_number));
-      if (remainingNewOrders.size === 0) stopNewOrderAlert();
+      const remainingNewOrders = optimisticOrders.filter((order) => order.status === "new");
+      if (remainingNewOrders.length === 0) stopNewOrderAlert();
     }
     try {
       const response = await fetch("/api/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNumber, status: nextStatus, estimatedReadyMinutes })
+        body: JSON.stringify({ orderId: targetOrder.id, orderNumber: targetOrder.order_number, status: nextStatus, estimatedReadyMinutes })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Status update failed.");
       if (data.order) {
-        const confirmedOrders = ordersRef.current.map((order) => (order.order_number === orderNumber ? normalizeAdminOrder({ ...order, ...data.order }) : order));
+        const confirmedOrders = ordersRef.current.map((order) => (orderKey(order) === key ? normalizeAdminOrder({ ...order, ...data.order }) : order));
         ordersRef.current = confirmedOrders;
         setOrders(confirmedOrders);
         if (data.order.status && data.order.status !== "new") {
-          const nextNewOrders = new Set(confirmedOrders.filter((order) => order.status === "new").map((order) => order.order_number));
-          if (nextNewOrders.size === 0) stopNewOrderAlert();
+          const nextNewOrders = confirmedOrders.filter((order) => order.status === "new");
+          if (nextNewOrders.length === 0) stopNewOrderAlert();
         }
       }
       setRefreshError(null);
@@ -836,7 +847,7 @@ export function AdminDashboard() {
       setRefreshError("Status could not be saved. Please refresh and try again.");
     } finally {
       const nextUpdating = new Set(updatingOrdersRef.current);
-      nextUpdating.delete(orderNumber);
+      nextUpdating.delete(key);
       updatingOrdersRef.current = nextUpdating;
       setUpdatingOrders(nextUpdating);
     }
@@ -847,17 +858,20 @@ export function AdminDashboard() {
   }
 
   const printKitchenTicket = useCallback(async (order: AdminOrder) => {
-    const orderNumber = order.order_number;
-    setNetworkPrintingOrders((current) => new Set(current).add(orderNumber));
+    const key = orderKey(order);
+    // The bridge call itself must use the real order_number — that's what the tablet's page-DOM
+    // lookup matches against — but every local tracking key uses the row id so two different
+    // orders that happen to share a number (see orderKey) never get conflated.
+    setNetworkPrintingOrders((current) => new Set(current).add(key));
     try {
-      const message = await bridgePrintOrder(orderNumber);
-      saveKitchenPrintState(orderNumber, {
+      const message = await bridgePrintOrder(order.order_number);
+      saveKitchenPrintState(key, {
         status: "printed",
         message,
         updatedAt: new Date().toISOString()
     });
     } catch (error) {
-      saveKitchenPrintState(orderNumber, {
+      saveKitchenPrintState(key, {
         status: "failed",
         message: error instanceof Error ? error.message : "Unknown print error.",
         updatedAt: new Date().toISOString()
@@ -865,7 +879,7 @@ export function AdminDashboard() {
     } finally {
       setNetworkPrintingOrders((current) => {
         const next = new Set(current);
-        next.delete(orderNumber);
+        next.delete(key);
         return next;
       });
     }
@@ -874,11 +888,11 @@ export function AdminDashboard() {
   useEffect(() => {
     if (!printStatusLoaded) return;
     orders.filter(shouldAutoPrintOrder).forEach((order) => {
-      const orderNumber = order.order_number;
-      if (networkPrintingOrders.has(orderNumber)) return;
-      if (autoPrintAttemptedRef.current.has(orderNumber)) return;
-      if (kitchenPrintStatusRef.current[orderNumber]) return;
-      autoPrintAttemptedRef.current.add(orderNumber);
+      const key = orderKey(order);
+      if (networkPrintingOrders.has(key)) return;
+      if (autoPrintAttemptedRef.current.has(key)) return;
+      if (kitchenPrintStatusRef.current[key]) return;
+      autoPrintAttemptedRef.current.add(key);
       void printKitchenTicket(order);
     });
   }, [networkPrintingOrders, orders, printKitchenTicket, printStatusLoaded]);
@@ -886,7 +900,7 @@ export function AdminDashboard() {
   function openAdminSection(section: AdminSection) {
     setActiveSection(section);
     setAdminMenuOpen(false);
-    setSelectedOrderNumber(null);
+    setSelectedOrderKey(null);
     window.localStorage.setItem(adminSectionStorageKey, section);
     saveAdminSectionToUrl(section);
     if (section === "past-orders") setFilter("past");
@@ -901,6 +915,7 @@ export function AdminDashboard() {
     setAddItemSearch("");
     setNewItemDraft(null);
     setEditingOrder({
+      orderId: order.id,
       orderNumber: order.order_number,
       customerName: order.customer_name,
       customerPhone: order.customer_phone,
@@ -1065,6 +1080,7 @@ export function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "edit",
+          orderId: editingOrder.orderId,
           orderNumber: editingOrder.orderNumber,
           customerName: editingOrder.customerName,
           customerPhone: editingOrder.customerPhone,
@@ -1144,7 +1160,7 @@ export function AdminDashboard() {
       .slice(0, 8);
   })();
 
-  const selectedOrder = selectedOrderNumber ? orders.find((order) => order.order_number === selectedOrderNumber) ?? null : null;
+  const selectedOrder = selectedOrderKey ? orders.find((order) => orderKey(order) === selectedOrderKey) ?? null : null;
   const normalizedQuery = query.trim().toLowerCase();
   const matchesQuery = (order: AdminOrder) => {
     if (!normalizedQuery) return true;
@@ -1170,11 +1186,11 @@ export function AdminDashboard() {
   function primaryActionFor(order: AdminOrder): { label: string; short: string; className: string; run: () => void } | null {
     if (order.status === "new") {
       if (isScheduledPickup(order)) {
-        return { label: "Accept Scheduled Order", short: "Accept", className: "bg-china-red text-white", run: () => updateStatus(order.order_number, "accepted") };
+        return { label: "Accept Scheduled Order", short: "Accept", className: "bg-china-red text-white", run: () => updateStatus(order, "accepted") };
       }
-      return { label: "Accept Order", short: "Accept", className: "bg-china-red text-white", run: () => setAcceptingOrder(order.order_number) };
+      return { label: "Accept Order", short: "Accept", className: "bg-china-red text-white", run: () => setAcceptingOrder(order) };
     }
-    if (order.status === "accepted") return { label: "Mark Picked Up", short: "Picked Up", className: "bg-emerald-600 text-white", run: () => { updateStatus(order.order_number, "picked_up"); setSelectedOrderNumber(null); } };
+    if (order.status === "accepted") return { label: "Mark Picked Up", short: "Picked Up", className: "bg-emerald-600 text-white", run: () => { updateStatus(order, "picked_up"); setSelectedOrderKey(null); } };
     return null;
   }
 
@@ -1183,10 +1199,11 @@ export function AdminDashboard() {
   // never open the drawer. Phone, items, payment, notes, totals live in the drawer (not the card).
   function renderOrderCard(order: AdminOrder) {
     const isTestOrder = order.order_number.toUpperCase().startsWith("TEST");
-    const printState = kitchenPrintStatus[order.order_number];
+    const key = orderKey(order);
+    const printState = kitchenPrintStatus[key];
     const scheduled = isScheduledPickup(order);
-    const busy = updatingOrders.has(order.order_number);
-    const printing = networkPrintingOrders.has(order.order_number);
+    const busy = updatingOrders.has(key);
+    const printing = networkPrintingOrders.has(key);
     const primary = primaryActionFor(order);
     const cardTone = isTestOrder
       ? "border-2 border-dashed border-purple-400 bg-purple-50"
@@ -1195,9 +1212,9 @@ export function AdminDashboard() {
         : "border-china-gold/50 bg-white";
     return (
       <article
-        key={order.order_number}
+        key={key}
         data-order-number={order.order_number}
-        onClick={() => setSelectedOrderNumber(order.order_number)}
+        onClick={() => setSelectedOrderKey(key)}
         className={`focus-ring cursor-pointer rounded-lg border px-3 py-2 shadow-sm transition hover:shadow-md ${cardTone}`}
       >
         <div className="flex items-start justify-between gap-2">
@@ -1650,7 +1667,7 @@ export function AdminDashboard() {
 
       {selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50" role="dialog" aria-modal="true">
-          <button aria-label="Close order details" onClick={() => setSelectedOrderNumber(null)} className="absolute inset-0" />
+          <button aria-label="Close order details" onClick={() => setSelectedOrderKey(null)} className="absolute inset-0" />
           <div className="relative z-10 flex h-full w-full max-w-lg max-w-[100vw] flex-col overflow-y-auto bg-white shadow-warm">
             <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3">
               <div className="min-w-0">
@@ -1658,7 +1675,7 @@ export function AdminDashboard() {
                 <h2 className="truncate text-xl font-black">{selectedOrder.order_number}</h2>
               </div>
               <span className={`shrink-0 rounded-md border px-2 py-1 text-xs font-black uppercase ${statusStyles[selectedOrder.status]}`}>{statusLabel(selectedOrder.status)}</span>
-              <button onClick={() => setSelectedOrderNumber(null)} aria-label="Close order details" className="focus-ring inline-flex h-10 w-10 items-center justify-center rounded-md border border-stone-300 text-stone-700">
+              <button onClick={() => setSelectedOrderKey(null)} aria-label="Close order details" className="focus-ring inline-flex h-10 w-10 items-center justify-center rounded-md border border-stone-300 text-stone-700">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -1733,21 +1750,21 @@ export function AdminDashboard() {
 
               <div className="grid gap-2">
                 {primaryActionFor(selectedOrder) && (
-                  <button onClick={() => primaryActionFor(selectedOrder)?.run()} disabled={updatingOrders.has(selectedOrder.order_number)} className={`focus-ring min-h-12 rounded-md px-4 font-black shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${primaryActionFor(selectedOrder)?.className}`}>
-                    {updatingOrders.has(selectedOrder.order_number) ? "Saving..." : primaryActionFor(selectedOrder)?.label}
+                  <button onClick={() => primaryActionFor(selectedOrder)?.run()} disabled={updatingOrders.has(orderKey(selectedOrder))} className={`focus-ring min-h-12 rounded-md px-4 font-black shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${primaryActionFor(selectedOrder)?.className}`}>
+                    {updatingOrders.has(orderKey(selectedOrder)) ? "Saving..." : primaryActionFor(selectedOrder)?.label}
                   </button>
                 )}
                 <div className="grid gap-2">
-                  <button onClick={() => printKitchenTicket(selectedOrder)} disabled={networkPrintingOrders.has(selectedOrder.order_number)} className="focus-ring min-h-11 rounded-md border border-china-red bg-china-red px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
-                    {networkPrintingOrders.has(selectedOrder.order_number) ? "Printing..." : kitchenPrintStatus[selectedOrder.order_number]?.status === "printed" ? "Reprint kitchen ticket" : "Kitchen print"}
+                  <button onClick={() => printKitchenTicket(selectedOrder)} disabled={networkPrintingOrders.has(orderKey(selectedOrder))} className="focus-ring min-h-11 rounded-md border border-china-red bg-china-red px-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400">
+                    {networkPrintingOrders.has(orderKey(selectedOrder)) ? "Printing..." : kitchenPrintStatus[orderKey(selectedOrder)]?.status === "printed" ? "Reprint kitchen ticket" : "Kitchen print"}
                   </button>
                 </div>
-                {kitchenPrintStatus[selectedOrder.order_number]?.status === "failed" && (
-                  <p className="whitespace-pre-wrap break-words rounded-md bg-amber-100 px-3 py-2 text-xs font-black uppercase text-amber-950">Print failed: {kitchenPrintStatus[selectedOrder.order_number]?.message ?? "Printer offline."}</p>
+                {kitchenPrintStatus[orderKey(selectedOrder)]?.status === "failed" && (
+                  <p className="whitespace-pre-wrap break-words rounded-md bg-amber-100 px-3 py-2 text-xs font-black uppercase text-amber-950">Print failed: {kitchenPrintStatus[orderKey(selectedOrder)]?.message ?? "Printer offline."}</p>
                 )}
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {activeStatuses.includes(selectedOrder.status) && (
-                    <button onClick={() => { const order = selectedOrder; setSelectedOrderNumber(null); openEditOrder(order); }} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
+                    <button onClick={() => { const order = selectedOrder; setSelectedOrderKey(null); openEditOrder(order); }} className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-china-gold/70 bg-white px-3 text-sm font-black text-stone-800">
                       <Edit3 className="h-4 w-4" /> Edit order
                     </button>
                   )}
@@ -1757,11 +1774,11 @@ export function AdminDashboard() {
                       value={selectedOrder.status}
                       onChange={(event) => {
                         const nextStatus = event.target.value as OrderStatus;
-                        if (nextStatus === "accepted" && !isScheduledPickup(selectedOrder)) { setAcceptingOrder(selectedOrder.order_number); return; }
-                        updateStatus(selectedOrder.order_number, nextStatus);
-                        if (nextStatus === "picked_up") setSelectedOrderNumber(null);
+                        if (nextStatus === "accepted" && !isScheduledPickup(selectedOrder)) { setAcceptingOrder(selectedOrder); return; }
+                        updateStatus(selectedOrder, nextStatus);
+                        if (nextStatus === "picked_up") setSelectedOrderKey(null);
                       }}
-                      disabled={updatingOrders.has(selectedOrder.order_number)}
+                      disabled={updatingOrders.has(orderKey(selectedOrder))}
                       className="focus-ring h-11 rounded-md border border-china-gold/70 bg-white px-2 text-sm font-bold disabled:opacity-60"
                     >
                       {statuses.map((value) => (<option key={value} value={value}>{statusLabel(value)}</option>))}
@@ -2101,14 +2118,14 @@ export function AdminDashboard() {
           <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-warm">
             <h2 className="text-xl font-black">Set ready time</h2>
             <p className="mt-1 text-sm text-stone-600">
-              Choose how long order <span className="font-black text-china-red">{acceptingOrder}</span> will take. This confirms the order and notifies the customer of the ready time.
+              Choose how long order <span className="font-black text-china-red">{acceptingOrder.order_number}</span> will take. This confirms the order and notifies the customer of the ready time.
             </p>
             <div className="mt-4 grid grid-cols-3 gap-2">
               {acceptReadyMinuteOptions.map((minutes) => (
                 <button
                   key={minutes}
                   onClick={() => acceptWithReadyTime(acceptingOrder, minutes)}
-                  disabled={updatingOrders.has(acceptingOrder)}
+                  disabled={updatingOrders.has(orderKey(acceptingOrder))}
                   className="focus-ring min-h-12 rounded-md bg-china-red px-3 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-400"
                 >
                   {minutes} min
@@ -2121,8 +2138,8 @@ export function AdminDashboard() {
                 type="number"
                 min="1"
                 inputMode="numeric"
-                value={customReadyMinutes[acceptingOrder] ?? ""}
-                onChange={(event) => setCustomReadyMinutes((current) => ({ ...current, [acceptingOrder]: event.target.value }))}
+                value={customReadyMinutes[orderKey(acceptingOrder)] ?? ""}
+                onChange={(event) => setCustomReadyMinutes((current) => ({ ...current, [orderKey(acceptingOrder)]: event.target.value }))}
                 className="focus-ring h-12 w-full rounded-md border border-stone-300 px-3"
                 placeholder="Minutes"
               />

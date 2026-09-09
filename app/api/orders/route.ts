@@ -16,6 +16,27 @@ function readyDate(minutes?: number) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
+// order_number resets daily and is not globally unique (see sql/schema.sql), so a caller that
+// already knows the exact row (the admin dashboard always does, from its own fetched order list)
+// should target it by id. orderNumber-only lookups fall back to the most recent matching row,
+// which is merely the best available guess when no id is supplied.
+async function resolveOrderRow<T = Record<string, unknown>>(
+  supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  columns: string,
+  { orderId, orderNumber }: { orderId?: string; orderNumber: string }
+) {
+  if (orderId) {
+    return supabase.from("orders").select(columns).eq("id", orderId).maybeSingle() as unknown as Promise<{ data: T | null; error: { message: string } | null }>;
+  }
+  return supabase
+    .from("orders")
+    .select(columns)
+    .eq("order_number", orderNumber)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle() as unknown as Promise<{ data: T | null; error: { message: string } | null }>;
+}
+
 export async function GET(request: Request) {
   if (!isValidAdminSession(cookies().get(getAdminCookieName())?.value)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -77,12 +98,14 @@ export async function PATCH(request: Request) {
   const body = (await request.json()) as
     | {
         action?: "status";
+        orderId?: string;
         orderNumber: string;
         status: OrderStatus;
         estimatedReadyMinutes?: number;
       }
     | {
         action: "edit";
+        orderId?: string;
         orderNumber: string;
         customerName: string;
         customerPhone: string;
@@ -159,15 +182,11 @@ export async function PATCH(request: Request) {
     const tipAmount = round2(Math.max(0, Number(body.tipAmount ?? 0)));
     const now = new Date().toISOString();
 
-    // order_number resets daily and is not globally unique (see sql/schema.sql), so this always
-    // resolves to the most recent matching row rather than assuming there's only one.
-    const { data: order, error: orderLookupError } = await supabase
-      .from("orders")
-      .select("id, discount_amount, promo_code")
-      .eq("order_number", body.orderNumber)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: order, error: orderLookupError } = await resolveOrderRow<{ id: string; discount_amount: number | null; promo_code: string | null }>(
+      supabase,
+      "id, discount_amount, promo_code",
+      body
+    );
     if (orderLookupError || !order) return NextResponse.json({ error: orderLookupError?.message ?? "Order not found." }, { status: 404 });
 
     // Keep the original promo discount, clamped so it can never exceed the new subtotal; recompute tax/fee on the discounted subtotal.
@@ -262,16 +281,10 @@ export async function PATCH(request: Request) {
   const update: Record<string, string | number | null> = { status: body.status, updated_at: now };
 
   // order_number resets daily and is not globally unique (see sql/schema.sql), so every lookup
-  // and update below targets a specific row's id — resolved once here as the most recent order
-  // with this number — never order_number directly. Updating by order_number alone could
-  // silently modify an unrelated order from a previous day that happens to share the same number.
-  const { data: targetOrder, error: targetLookupError } = await supabase
-    .from("orders")
-    .select("id, status")
-    .eq("order_number", body.orderNumber)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // and update below targets a specific row's id — resolved once here — never order_number
+  // directly. Updating by order_number alone could silently modify an unrelated order from a
+  // previous day (or a still-active future-scheduled order) that happens to share the same number.
+  const { data: targetOrder, error: targetLookupError } = await resolveOrderRow<{ id: string; status: string | null }>(supabase, "id, status", body);
   if (targetLookupError) return NextResponse.json({ error: targetLookupError.message }, { status: 500 });
   if (!targetOrder) return NextResponse.json({ error: "Order not found." }, { status: 404 });
   const previousStatus: OrderStatus | string | null = targetOrder.status ?? null;
