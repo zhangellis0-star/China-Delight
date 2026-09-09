@@ -34,11 +34,15 @@ async function payloadResponse(request: Request) {
   const supabase = getSupabaseAdmin();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 400 });
 
+  // order_number resets daily and is not globally unique (see sql/schema.sql), so this always
+  // prints the most recent matching order rather than assuming there's only one.
   const { data: order, error } = await supabase
     .from("orders")
     .select("*, order_items(*)")
     .eq("order_number", orderNumber)
-    .single();
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (error || !order) {
     return NextResponse.json({ error: error?.message ?? "Order not found." }, { status: 404 });

@@ -273,7 +273,9 @@ async function updateOrderStatus(input: GoogleSheetsStatusSyncInput, signal?: Ab
   const orderNumberColumn = columnLetter(orderNumberIndex);
   const orderNumbersData = await readValues(config.spreadsheetId, sheetRange(config.sheetName, `${orderNumberColumn}2:${orderNumberColumn}`), token, signal);
   const orderNumbers = orderNumbersData.values ?? [];
-  const rowOffset = orderNumbers.findIndex((row) => String(row[0] ?? "").trim() === input.orderNumber);
+  // order_number resets daily and is not globally unique, so more than one row can share the
+  // same number. Rows are appended in creation order, so the last match is the most recent order.
+  const rowOffset = orderNumbers.map((row) => String(row[0] ?? "").trim()).lastIndexOf(input.orderNumber);
   if (rowOffset < 0) return { synced: false, skipped: true, found: false, statusColumn: columnLetter(statusIndex) };
 
   const rowNumber = rowOffset + 2;

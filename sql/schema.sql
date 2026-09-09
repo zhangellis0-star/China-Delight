@@ -52,7 +52,9 @@ end $$;
 
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
-  order_number text not null unique,
+  -- Not unique: order_number resets to 251 every business day, so the same number recurs across
+  -- different days. The uniqueness constraint that used to be here is dropped further down.
+  order_number text not null,
   customer_name text not null,
   customer_phone text not null,
   customer_email text,
@@ -104,6 +106,13 @@ alter table public.orders add column if not exists ready_email_error text;
 alter table public.orders alter column customer_email drop not null;
 alter table public.orders add column if not exists promo_code text;
 alter table public.orders add column if not exists discount_amount numeric(10, 2) not null default 0;
+
+-- order_number resets to 251 every business date (see order_number_counters below), so the same
+-- number legitimately recurs on different days — it must not be globally unique, or the first
+-- checkout of a new day fails as soon as it collides with an earlier day's number. Every lookup
+-- and update by order_number in the app code resolves the specific row (most recent match, or
+-- most recent match by phone) instead of assuming order_number alone identifies one row.
+alter table public.orders drop constraint if exists orders_order_number_key;
 
 -- Promo codes / discounts / store credit managed from the admin dashboard.
 create table if not exists public.promo_codes (

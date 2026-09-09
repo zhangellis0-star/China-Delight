@@ -159,7 +159,15 @@ export async function PATCH(request: Request) {
     const tipAmount = round2(Math.max(0, Number(body.tipAmount ?? 0)));
     const now = new Date().toISOString();
 
-    const { data: order, error: orderLookupError } = await supabase.from("orders").select("id, discount_amount, promo_code").eq("order_number", body.orderNumber).single();
+    // order_number resets daily and is not globally unique (see sql/schema.sql), so this always
+    // resolves to the most recent matching row rather than assuming there's only one.
+    const { data: order, error: orderLookupError } = await supabase
+      .from("orders")
+      .select("id, discount_amount, promo_code")
+      .eq("order_number", body.orderNumber)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (orderLookupError || !order) return NextResponse.json({ error: orderLookupError?.message ?? "Order not found." }, { status: 404 });
 
     // Keep the original promo discount, clamped so it can never exceed the new subtotal; recompute tax/fee on the discounted subtotal.
@@ -252,21 +260,21 @@ export async function PATCH(request: Request) {
 
   const now = new Date().toISOString();
   const update: Record<string, string | number | null> = { status: body.status, updated_at: now };
-  let previousStatus: OrderStatus | string | null = null;
-  const { data: existingOrder, error: existingOrderError } = await supabase
+
+  // order_number resets daily and is not globally unique (see sql/schema.sql), so every lookup
+  // and update below targets a specific row's id — resolved once here as the most recent order
+  // with this number — never order_number directly. Updating by order_number alone could
+  // silently modify an unrelated order from a previous day that happens to share the same number.
+  const { data: targetOrder, error: targetLookupError } = await supabase
     .from("orders")
-    .select("status")
+    .select("id, status")
     .eq("order_number", body.orderNumber)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
-  if (existingOrderError) {
-    console.warn("[orders] Could not read previous status before Google Sheets status sync", {
-      orderNumber: body.orderNumber,
-      message: existingOrderError.message,
-      code: existingOrderError.code
-    });
-  } else {
-    previousStatus = existingOrder?.status ?? null;
-  }
+  if (targetLookupError) return NextResponse.json({ error: targetLookupError.message }, { status: 500 });
+  if (!targetOrder) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+  const previousStatus: OrderStatus | string | null = targetOrder.status ?? null;
 
   const minutes = body.estimatedReadyMinutes && body.estimatedReadyMinutes > 0 ? Math.round(body.estimatedReadyMinutes) : null;
   if (body.status === "accepted") {
@@ -279,7 +287,7 @@ export async function PATCH(request: Request) {
   const { data: updatedOrder, error } = await supabase
     .from("orders")
     .update(update)
-    .eq("order_number", body.orderNumber)
+    .eq("id", targetOrder.id)
     .select("*, order_items(*)")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -302,7 +310,7 @@ export async function PATCH(request: Request) {
         accepted_email_error: emailResult.sent ? null : emailResult.error ?? null,
         updated_at: new Date().toISOString()
       })
-      .eq("order_number", body.orderNumber);
+      .eq("id", targetOrder.id);
     if (acceptedEmailUpdateError) {
       console.error("[orders] Accepted email status update failed", {
         orderNumber: body.orderNumber,

@@ -20,13 +20,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Order lookup is temporarily unavailable. Please call the restaurant." }, { status: 503 });
   }
 
-  const { data, error } = await supabase
+  // order_number resets daily and is not globally unique (see sql/schema.sql), so more than one
+  // order can share the same number across different days — match on phone too, preferring the
+  // most recent match if somehow more than one shares both.
+  const { data: matches, error } = await supabase
     .from("orders")
-    .select("order_number, customer_phone, status, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, estimated_ready_minutes, estimated_ready_at, promo_code, discount_amount, total, order_items(quantity)")
+    .select("order_number, customer_phone, status, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, estimated_ready_minutes, estimated_ready_at, promo_code, discount_amount, total, created_at, order_items(quantity)")
     .eq("order_number", orderNumber)
-    .single();
+    .order("created_at", { ascending: false });
 
-  if (error || !data || digitsOnly(data.customer_phone ?? "") !== phone) {
+  const data = (matches ?? []).find((order) => digitsOnly(order.customer_phone ?? "") === phone);
+  if (error || !data) {
     return NextResponse.json({ error: "Order not found. Check the order number and phone number." }, { status: 404 });
   }
 
