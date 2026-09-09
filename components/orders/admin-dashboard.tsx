@@ -1196,6 +1196,7 @@ export function AdminDashboard() {
     return (
       <article
         key={order.order_number}
+        data-order-number={order.order_number}
         onClick={() => setSelectedOrderNumber(order.order_number)}
         className={`focus-ring cursor-pointer rounded-lg border px-3 py-2 shadow-sm transition hover:shadow-md ${cardTone}`}
       >

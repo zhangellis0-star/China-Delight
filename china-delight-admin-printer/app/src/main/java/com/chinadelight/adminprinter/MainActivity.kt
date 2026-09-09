@@ -307,7 +307,20 @@ class MainActivity : Activity() {
         webView.evaluateJavascript(script, null)
     }
 
-    /** JS injected into the admin page: adds a "Print to Epson" button to each order card. */
+    /**
+     * JS injected into the admin page: adds a "Print to Epson" button to each order card.
+     *
+     * Reads the order number from the card's `data-order-number` attribute (set by
+     * admin-dashboard.tsx on every order <article>) instead of pattern-matching the card's
+     * visible text. The old approach hardcoded the order-number *format* in a regex here (and
+     * again in orderNumberRegex above) — when the website's order-number format changed (from a
+     * long random suffix to a short sequential number), this app's old regex silently stopped
+     * matching anything, and the print button disappeared from every order until this app was
+     * rebuilt. Reading a dedicated attribute instead means the button keeps working no matter
+     * what the order-number format looks like, with no future rebuild required for that reason.
+     * The old regex is kept as a fallback only, in case a future card is ever missing the
+     * attribute.
+     */
     private fun injectionJs(): String = """
         (function(){
           var ORDER = /\b(?:CD-\d{1,6}|TEST-\d{6}-[A-Z0-9]{3})\b/i;
@@ -331,9 +344,13 @@ class MainActivity : Activity() {
             for (var i=0;i<cards.length;i++){
               var c = cards[i];
               if (c.querySelector('.cd-print-btn')) continue;
-              var m = (c.textContent || '').match(ORDER);
-              if (!m) continue;
-              c.appendChild(makeBtn(m[0]));
+              var orderNumber = c.getAttribute('data-order-number');
+              if (!orderNumber) {
+                var m = (c.textContent || '').match(ORDER);
+                orderNumber = m ? m[0] : null;
+              }
+              if (!orderNumber) continue;
+              c.appendChild(makeBtn(orderNumber));
             }
           }
           window.__cdScan = scan;
