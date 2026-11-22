@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
-import { menuItems } from "@/data/menu";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { appendOrderToGoogleSheets } from "@/lib/google-sheets";
 import { closedOrderingMessage, isLunchAvailable, isLunchItem, lunchAvailabilityMessage, nextOpeningLabel, validateScheduledPickupISO } from "@/lib/order-rules";
 import { easternDateKey, getOperationalSettings, orderingAllowed } from "@/lib/operations";
-import { calculateCart, customizationUpcharge, getItemPrice, hasReviewPrice } from "@/lib/pricing";
+import { customerFieldError, priceCheckoutItems } from "@/lib/checkout-items";
+import { calculateCart } from "@/lib/pricing";
 import { computePromoDiscount, normalizePromoCode, validatePromo } from "@/lib/promo";
-import { addonPrices, restaurant } from "@/lib/restaurant";
+import { restaurant } from "@/lib/restaurant";
 import { buildFreeLine, computeOffer, getSpecialOffers } from "@/lib/special-offers";
 import { getSupabaseAdmin, getSupabaseEnvStatus } from "@/lib/supabase-server";
 import { sendNewOrderTelegramNotification } from "@/lib/telegram";
-import type { CartCustomization, CartItem, CartTotals, CheckoutCustomer } from "@/types";
+import type { CartItem, CartTotals, CheckoutCustomer } from "@/types";
 
-const menuById = new Map(menuItems.map((item) => [item.id, item]));
 const orderingUnavailableMessage = `Online ordering is temporarily unavailable. Please call China Delight at ${restaurant.phone} to place your order.`;
-const maxQuantityPerItem = 50;
-const maxItemsPerOrder = 100;
 
 // Sequential per-day order numbers (CD-251, CD-252, ...), reset back to 251 at the start of each
 // Eastern business date. Allocated via a Postgres function (see sql/schema.sql
@@ -43,56 +40,6 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
-// Reprice every cart line from the server-side menu so the browser cannot tamper with
-// prices, names, or categories. Returns sanitized items whose identity fields and
-// unit_price come only from data/menu.ts (plus known add-on upcharges).
-function priceCheckoutItems(rawItems: CartItem[]): { ok: true; items: CartItem[] } | { ok: false; error: string } {
-  if (rawItems.length > maxItemsPerOrder) {
-    return { ok: false, error: "That order has too many lines. Please call the restaurant for large orders." };
-  }
-
-  const priced: CartItem[] = [];
-  for (const raw of rawItems) {
-    const menuItem = menuById.get(String(raw?.menuItemId ?? ""));
-    if (!menuItem) {
-      return { ok: false, error: "An item in your cart is no longer on the menu. Please remove it and try again." };
-    }
-    const quantity = Number(raw?.quantity);
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantityPerItem) {
-      return { ok: false, error: `Invalid quantity for ${menuItem.name}.` };
-    }
-
-    const customization: CartCustomization = { ...(raw?.customization ?? { size: "order" }) };
-    // extraCharge fields are admin-dashboard-only; never accepted from the public checkout.
-    delete customization.extraChargeLabel;
-    delete customization.extraChargeAmount;
-    // Special-offer markers are server-created only. A browser-submitted cart item must never be
-    // able to label itself as a free reward on saved orders, receipts, or kitchen tickets.
-    delete customization.specialOffer;
-    delete customization.specialOfferTitle;
-    if (hasReviewPrice(menuItem, customization.size)) {
-      return { ok: false, error: `${menuItem.name} cannot be ordered online right now. Please call the restaurant.` };
-    }
-    const addOns = Array.isArray(customization.addOns)
-      ? customization.addOns.filter((name): name is keyof typeof addonPrices => typeof name === "string" && name in addonPrices)
-      : [];
-    if (customization.addOns) customization.addOns = addOns;
-
-    const unitPrice = Number((getItemPrice(menuItem, customization.size) + customizationUpcharge(addOns)).toFixed(2));
-
-    priced.push({
-      cartId: String(raw?.cartId ?? `${menuItem.id}-${priced.length}`),
-      menuItemId: menuItem.id,
-      number: menuItem.number,
-      name: menuItem.name,
-      category: menuItem.category,
-      quantity,
-      unitPrice,
-      customization
-    });
-  }
-  return { ok: true, items: priced };
-}
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
@@ -106,6 +53,9 @@ export async function POST(request: Request) {
   if (!body.customer?.name || !body.customer?.phone || !body.customer?.email || !body.items?.length) {
     return NextResponse.json({ error: "Missing customer information or cart items." }, { status: 400 });
   }
+  const customerError = customerFieldError(body.customer);
+  if (customerError) return NextResponse.json({ error: customerError }, { status: 400 });
+  if (!Array.isArray(body.items)) return NextResponse.json({ error: "Missing customer information or cart items." }, { status: 400 });
   if (!isValidEmail(body.customer.email)) {
     return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
   }
@@ -354,5 +304,5 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ orderNumber });
+  return NextResponse.json({ orderNumber, orderId: order.id });
 }

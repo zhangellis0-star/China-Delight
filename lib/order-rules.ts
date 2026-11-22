@@ -59,6 +59,13 @@ export function isRestaurantOpen(date = new Date()) {
   return now >= window.open && now < window.close;
 }
 
+// True only after today's physical closing time. Before opening the store is also "not open", but
+// the day has not happened yet, so callers that close out a day must not treat it as finished.
+export function isPastClosingTime(date = new Date()) {
+  const parts = easternParts(date);
+  return minutes(parts.hour, parts.minute) >= storeWindow(parts.day).close;
+}
+
 export function isStoreOpen(date = new Date()) {
   const parts = easternParts(date);
   const now = minutes(parts.hour, parts.minute);

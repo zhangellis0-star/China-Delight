@@ -2,17 +2,26 @@ import { NextResponse } from "next/server";
 import { confirmedReadyTime } from "@/lib/order-rules";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
+export const dynamic = "force-dynamic";
+
+const noStore = { "Cache-Control": "no-store" };
+
 function digitsOnly(value: string) {
   return value.replace(/\D/g, "");
 }
 
-export async function POST(request: Request) {
-  const body = (await request.json()) as { orderNumber?: string; phone?: string };
-  const orderNumber = body.orderNumber?.trim();
-  const phone = digitsOnly(body.phone ?? "");
+function normalizedEmail(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
 
-  if (!orderNumber || !phone) {
-    return NextResponse.json({ error: "Enter your order number and phone number." }, { status: 400 });
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => ({}))) as { orderNumber?: unknown; phone?: unknown; email?: unknown };
+  const orderNumber = typeof body.orderNumber === "string" ? body.orderNumber.trim() : "";
+  const phone = digitsOnly(typeof body.phone === "string" ? body.phone : "");
+  const email = normalizedEmail(body.email);
+
+  if (!orderNumber || !phone || !email) {
+    return NextResponse.json({ error: "Enter your order number, phone number, and email." }, { status: 400, headers: noStore });
   }
 
   const supabase = getSupabaseAdmin();
@@ -20,18 +29,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Order lookup is temporarily unavailable. Please call the restaurant." }, { status: 503 });
   }
 
-  // order_number resets daily and is not globally unique (see sql/schema.sql), so more than one
-  // order can share the same number across different days — match on phone too, preferring the
-  // most recent match if somehow more than one shares both.
+  // Order numbers are short and repeat daily, and a phone number is easy to find out, so a lookup
+  // must match the number, phone and email together before anything is shown. Contact details
+  // are only compared here, never returned. Most recent match wins if several share all three.
   const { data: matches, error } = await supabase
     .from("orders")
-    .select("order_number, customer_phone, status, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, estimated_ready_minutes, estimated_ready_at, promo_code, discount_amount, total, created_at, order_items(quantity)")
+    .select("order_number, customer_phone, customer_email, status, payment_method, payment_status, pickup_time_type, scheduled_pickup_time, estimated_ready_minutes, estimated_ready_at, promo_code, discount_amount, total, created_at, order_items(quantity)")
     .eq("order_number", orderNumber)
     .order("created_at", { ascending: false });
 
-  const data = (matches ?? []).find((order) => digitsOnly(order.customer_phone ?? "") === phone);
+  const data = (matches ?? []).find((order) => digitsOnly(order.customer_phone ?? "") === phone && normalizedEmail(order.customer_email) === email);
   if (error || !data) {
-    return NextResponse.json({ error: "Order not found. Check the order number and phone number." }, { status: 404 });
+    return NextResponse.json({ error: "Order not found. Check the order number, phone number, and email." }, { status: 404, headers: noStore });
   }
 
   return NextResponse.json({
@@ -47,5 +56,5 @@ export async function POST(request: Request) {
       discountAmount: data.discount_amount,
       total: data.total
     }
-  });
+  }, { headers: noStore });
 }

@@ -51,6 +51,9 @@ export type GoogleSheetsOrderSyncInput = {
 
 export type GoogleSheetsStatusSyncInput = {
   orderNumber: string;
+  // When the order was created. Numbers repeat every day, so the row must match this Eastern
+  // date as well as the number; without it the newest row with the number is used.
+  createdAt?: Date;
   oldStatus?: OrderStatus | string | null;
   newStatus: OrderStatus;
   updatedAt?: Date;
@@ -142,6 +145,11 @@ function easternDateTime(date: Date) {
     minute: "2-digit",
     second: "2-digit"
   }).format(date);
+}
+
+// The "MM/DD/YYYY" that starts easternDateTime's output, used to match a row to its order's day.
+export function sheetDatePrefix(date: Date) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
 function yesNo(value: boolean) {
@@ -272,10 +280,19 @@ async function updateOrderStatus(input: GoogleSheetsStatusSyncInput, signal?: Ab
 
   const orderNumberColumn = columnLetter(orderNumberIndex);
   const orderNumbersData = await readValues(config.spreadsheetId, sheetRange(config.sheetName, `${orderNumberColumn}2:${orderNumberColumn}`), token, signal);
-  const orderNumbers = orderNumbersData.values ?? [];
+  const orderNumbers = (orderNumbersData.values ?? []).map((row) => String(row[0] ?? "").trim());
   // order_number resets daily and is not globally unique, so more than one row can share the
-  // same number. Rows are appended in creation order, so the last match is the most recent order.
-  const rowOffset = orderNumbers.map((row) => String(row[0] ?? "").trim()).lastIndexOf(input.orderNumber);
+  // same number. Rows are appended in creation order. With a creation time, only a row created on
+  // that Eastern date matches; a number-only match could rewrite another day's order.
+  let rowOffset = orderNumbers.lastIndexOf(input.orderNumber);
+  if (input.createdAt) {
+    const createdIndex = headerIndex(headers, ["Created Date/Time"], orderHeaders.indexOf("Created Date/Time"));
+    const createdColumn = columnLetter(createdIndex);
+    const createdData = await readValues(config.spreadsheetId, sheetRange(config.sheetName, `${createdColumn}2:${createdColumn}`), token, signal);
+    const createdCells = (createdData.values ?? []).map((row) => String(row[0] ?? "").trim());
+    const day = sheetDatePrefix(input.createdAt);
+    rowOffset = orderNumbers.findLastIndex((number, index) => number === input.orderNumber && (createdCells[index] ?? "").startsWith(day));
+  }
   if (rowOffset < 0) return { synced: false, skipped: true, found: false, statusColumn: columnLetter(statusIndex) };
 
   const rowNumber = rowOffset + 2;

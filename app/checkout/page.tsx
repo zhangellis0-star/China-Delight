@@ -21,6 +21,7 @@ import { calculateCart, calculateCashDiscountPricing, formatPrice } from "@/lib/
 import { computePromoDiscount, normalizePromoCode } from "@/lib/promo";
 import { buildFreeLine, computeOffer, offerSummary } from "@/lib/offer-logic";
 import type { PublicSpecialOffer } from "@/lib/offer-logic";
+import { customerFieldLimits } from "@/lib/checkout-limits";
 import type { AppliedPromo, CheckoutCustomer } from "@/types";
 
 type CheckoutFormCustomer = CheckoutCustomer;
@@ -265,10 +266,10 @@ export default function CheckoutPage() {
     const storedTotals = { ...totals, promoCode: appliedPromo?.code ?? null };
     window.localStorage.setItem(
       "china-delight-last-order",
-      JSON.stringify({ orderNumber: data.orderNumber, customer: { ...customer, paymentMethod: "pay_at_pickup" }, items: confirmationItems, totals: storedTotals, status: "new", placedAt: new Date().toISOString() })
+      JSON.stringify({ orderNumber: data.orderNumber, orderId: data.orderId, customer: { name: customer.name, paymentMethod: "pay_at_pickup", pickupTimeType: customer.pickupTimeType, scheduledPickupTime: customer.scheduledPickupTime }, items: confirmationItems, totals: storedTotals, status: "new", placedAt: new Date().toISOString() })
     );
     clearCart();
-    router.push(`/confirmation?order=${data.orderNumber}`);
+    router.push(`/confirmation?order=${encodeURIComponent(data.orderNumber)}&ref=${encodeURIComponent(data.orderId ?? "")}`);
   }
 
   return (
@@ -285,6 +286,7 @@ export default function CheckoutPage() {
               <input
                 ref={nameRef}
                 required
+                maxLength={customerFieldLimits.name}
                 aria-invalid={Boolean(fieldErrors.name)}
                 value={customer.name}
                 onChange={(event) => {
@@ -306,6 +308,7 @@ export default function CheckoutPage() {
               <input
                 ref={phoneRef}
                 required
+                maxLength={customerFieldLimits.phone}
                 aria-invalid={Boolean(fieldErrors.phone)}
                 value={customer.phone}
                 onChange={(event) => {
@@ -327,6 +330,7 @@ export default function CheckoutPage() {
               <input
                 ref={emailRef}
                 required
+                maxLength={customerFieldLimits.email}
                 type="email"
                 aria-invalid={Boolean(fieldErrors.email)}
                 value={customer.email}
@@ -578,7 +582,7 @@ export default function CheckoutPage() {
 
           <label className="grid gap-1 font-bold">
             Order notes
-            <textarea value={customer.notes} onChange={(event) => setCustomer({ ...customer, notes: event.target.value })} className="focus-ring min-h-24 rounded-md border border-stone-300 p-3" placeholder="Pickup notes, allergy notes, special instructions..." />
+            <textarea maxLength={customerFieldLimits.notes} value={customer.notes} onChange={(event) => setCustomer({ ...customer, notes: event.target.value })} className="focus-ring min-h-24 rounded-md border border-stone-300 p-3" placeholder="Pickup notes, allergy notes, special instructions..." />
           </label>
         </div>
 

@@ -16,7 +16,9 @@ export async function POST(request: Request) {
   response.cookies.set(getAdminCookieName(), signAdminSession(), {
     httpOnly: true,
     sameSite: "lax",
-    secure: (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https://"),
+    // Always secure in production, whether or not NEXT_PUBLIC_SITE_URL is set; plain http only for
+    // local development.
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: adminSessionMaxAgeSeconds
   });

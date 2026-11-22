@@ -77,3 +77,20 @@ test("future scheduled pickups stay active even once their creation date is past
   assert.equal(isAutoPickupCandidate(order, cutoff), false);
   assert.equal(isAutoPickupCandidate({ ...order, scheduled_pickup_time: "2026-08-28T20:00:00Z" }, cutoff), true);
 });
+
+test("before opening and at the midnight cron, an order scheduled for today stays open", () => {
+  // Placed Monday 2026-11-23 7:00 PM ET for Tuesday 2026-11-24 12:00 PM ET.
+  const order: AutoPickupOrder = { order_number: "CD-260", status: "new", created_at: "2026-11-24T00:00:00Z", scheduled_pickup_time: "2026-11-24T17:00:00Z" };
+  // Nightly cron, Tuesday 12:00 AM ET: the store is closed, but Tuesday has not happened yet.
+  assert.equal(currentAutoPickupCutoff(new Date("2026-11-24T05:00:00Z")), "2026-11-24");
+  assert.equal(isAutoPickupCandidate(order, currentAutoPickupCutoff(new Date("2026-11-24T05:00:00Z"))), false);
+  // Dashboard poll, Tuesday 9:00 AM ET, before the 11:00 AM opening.
+  assert.equal(isAutoPickupCandidate(order, currentAutoPickupCutoff(new Date("2026-11-24T14:00:00Z"))), false);
+  // Tuesday 10:15 PM ET, after the 10:00 PM close: the pickup day is over.
+  assert.equal(isAutoPickupCandidate(order, currentAutoPickupCutoff(new Date("2026-11-25T03:15:00Z"))), true);
+});
+
+test("the midnight cron still closes the previous day's leftover orders", () => {
+  const leftover: AutoPickupOrder = { order_number: "CD-255", status: "accepted", created_at: "2026-11-23T20:00:00Z", scheduled_pickup_time: null };
+  assert.equal(isAutoPickupCandidate(leftover, currentAutoPickupCutoff(new Date("2026-11-24T05:00:00Z"))), true);
+});

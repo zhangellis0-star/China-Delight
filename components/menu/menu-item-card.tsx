@@ -3,6 +3,7 @@
 import { Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { cartCustomizationKey, useCart } from "@/components/cart/cart-provider";
+import { maxItemNotesLength } from "@/lib/checkout-limits";
 import { comboIncludedItems, isComboItem, isLunchAvailable, isLunchItem, lunchAvailabilityMessage } from "@/lib/order-rules";
 import { defaultSize, formatMenuPrice, formatPrice, getItemPrice, hasReviewPrice } from "@/lib/pricing";
 import type { CartCustomization, CartItem, LunchRiceChoice, LunchSideChoice, MenuItem, MenuPriceKey } from "@/types";
@@ -210,7 +211,7 @@ export function MenuItemCard({ item, soldOut = false }: { item: MenuItem; soldOu
 
                 <label className="grid gap-1 text-sm font-bold text-stone-700">
                   Special instructions
-                  <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="focus-ring min-h-20 rounded-md border border-stone-300 bg-white p-3" placeholder="Allergy notes, preparation requests..." />
+                  <textarea maxLength={maxItemNotesLength} value={notes} onChange={(event) => setNotes(event.target.value)} className="focus-ring min-h-20 rounded-md border border-stone-300 bg-white p-3" placeholder="Allergy notes, preparation requests..." />
                 </label>
               </div>
             )}

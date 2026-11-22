@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getAdminCookieName, isValidAdminSession } from "@/lib/admin-auth";
 import { printerHost, printerPort } from "@/lib/escpos";
 import { escposTicket } from "@/lib/kitchen-ticket";
+import { chooseOrderToPrint } from "@/lib/print-order-choice";
 import type { PrintOrder } from "@/lib/kitchen-ticket";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
@@ -34,19 +35,22 @@ async function payloadResponse(request: Request) {
   const supabase = getSupabaseAdmin();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 400 });
 
-  // order_number resets daily and is not globally unique (see sql/schema.sql), so this always
-  // prints the most recent matching order rather than assuming there's only one.
-  const { data: order, error } = await supabase
+  // order_number resets daily and is not globally unique (see sql/schema.sql), so more than one
+  // order can match. chooseOrderToPrint refuses rather than guess.
+  const { data: matches, error } = await supabase
     .from("orders")
     .select("*, order_items(*)")
     .eq("order_number", orderNumber)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
 
-  if (error || !order) {
-    return NextResponse.json({ error: error?.message ?? "Order not found." }, { status: 404 });
+  if (error) return NextResponse.json({ error: "Order lookup failed." }, { status: 500 });
+  const choice = chooseOrderToPrint(matches ?? []);
+  if (!choice) return NextResponse.json({ error: "Order not found." }, { status: 404 });
+  if ("ambiguous" in choice) {
+    return NextResponse.json({ error: `More than one order has number ${orderNumber}. Check the order on screen and write the ticket by hand.` }, { status: 409 });
   }
+  const order = choice.order;
 
   const payload = escposTicket(order as PrintOrder);
   return NextResponse.json({

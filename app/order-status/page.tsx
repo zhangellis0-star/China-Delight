@@ -23,6 +23,7 @@ type LookupOrder = {
 export default function OrderStatusPage() {
   const [orderNumber, setOrderNumber] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [order, setOrder] = useState<LookupOrder | null>(null);
@@ -36,7 +37,7 @@ export default function OrderStatusPage() {
     const response = await fetch("/api/order-status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderNumber, phone })
+      body: JSON.stringify({ orderNumber, phone, email })
     });
     const data = await response.json();
     setLoading(false);
@@ -55,7 +56,7 @@ export default function OrderStatusPage() {
     <section className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
       <p className="font-black uppercase tracking-[0.16em] text-china-red">Order status</p>
       <h1 className="mt-2 text-3xl font-black sm:text-4xl">Check your order</h1>
-      <p className="mt-3 leading-7 text-stone-700">Enter your order number and phone number. We only show orders that match both.</p>
+      <p className="mt-3 leading-7 text-stone-700">Enter your order number, plus the phone number and email you used to order. We only show orders that match all three.</p>
 
       <form onSubmit={lookup} className="mt-6 grid gap-4 rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
         <label className="grid gap-1 font-bold">
@@ -65,6 +66,10 @@ export default function OrderStatusPage() {
         <label className="grid gap-1 font-bold">
           Phone number
           <input required value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" className="focus-ring h-12 rounded-md border border-stone-300 px-3" />
+        </label>
+        <label className="grid gap-1 font-bold">
+          Email
+          <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" className="focus-ring h-12 rounded-md border border-stone-300 px-3" />
         </label>
         {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 font-bold text-china-red">{error}</p>}
         <button disabled={loading} className="focus-ring inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-china-red px-5 py-3 font-black text-white disabled:bg-stone-400">

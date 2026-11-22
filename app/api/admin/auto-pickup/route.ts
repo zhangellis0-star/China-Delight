@@ -17,8 +17,8 @@ function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET?.trim();
   const auth = request.headers.get("authorization") ?? "";
   const headerSecret = request.headers.get("x-cron-secret") ?? "";
-  const querySecret = new URL(request.url).searchParams.get("secret") ?? "";
-  if (cronSecret && (auth === `Bearer ${cronSecret}` || headerSecret === cronSecret || querySecret === cronSecret)) return true;
+  // Headers only: a secret in the URL ends up in access logs and browser history.
+  if (cronSecret && (auth === `Bearer ${cronSecret}` || headerSecret === cronSecret)) return true;
   return isValidAdminSession(cookies().get(getAdminCookieName())?.value);
 }
 

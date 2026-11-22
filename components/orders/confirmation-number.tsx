@@ -11,7 +11,8 @@ import type { CartItem, CheckoutCustomer, PaymentStatus } from "@/types";
 
 type LastOrder = {
   orderNumber: string;
-  customer: CheckoutCustomer;
+  orderId?: string;
+  customer: Pick<CheckoutCustomer, "name" | "paymentMethod" | "pickupTimeType" | "scheduledPickupTime">;
   items: CartItem[];
   totals: { subtotal: number; discount?: number; tax: number; processingFee?: number; tip?: number; total: number; promoCode?: string | null };
 };
@@ -19,9 +20,6 @@ type LastOrder = {
 type SupabaseConfirmationOrder = {
   order_number: string;
   customer_name: string;
-  customer_phone?: string | null;
-  customer_email?: string | null;
-  customer_notes?: string | null;
   payment_method: "stripe" | "pay_at_pickup";
   payment_status?: PaymentStatus;
   pickup_time_type: "asap" | "scheduled";
@@ -44,7 +42,7 @@ type SupabaseConfirmationOrder = {
   }>;
 };
 
-function pickupTime(customer: CheckoutCustomer) {
+function pickupTime(customer: LastOrder["customer"]) {
   return customer.pickupTimeType === "scheduled" && customer.scheduledPickupTime ? formatPickupDateTime(customer.scheduledPickupTime) : ASAP_PICKUP_NOTE;
 }
 
@@ -60,6 +58,7 @@ function readyLabel(order: { estimated_ready_at?: string | null }) {
 export function ConfirmationNumber() {
   const params = useSearchParams();
   const orderNumber = params.get("order") ?? "Pending";
+  const orderRef = params.get("ref") ?? "";
   const { clearCart } = useCart();
   const clearedRef = useRef(false);
   const [lastOrder, setLastOrder] = useState<LastOrder | null>(null);
@@ -77,7 +76,7 @@ export function ConfirmationNumber() {
   useEffect(() => {
     async function loadSupabaseOrder() {
       if (!orderNumber || orderNumber === "Pending") return;
-      const response = await fetch(`/api/order-confirmation/${encodeURIComponent(orderNumber)}`);
+      const response = await fetch(`/api/order-confirmation/${encodeURIComponent(orderNumber)}?ref=${encodeURIComponent(orderRef)}`);
       if (!response.ok) return;
       const data = (await response.json()) as { order: SupabaseConfirmationOrder | null };
       if (data.order) setSupabaseOrder(data.order);
@@ -88,8 +87,10 @@ export function ConfirmationNumber() {
     const saved = window.localStorage.getItem("china-delight-last-order");
     if (!saved) return;
     const parsed = JSON.parse(saved) as LastOrder;
-    if (parsed.orderNumber === orderNumber) setLastOrder(parsed);
-  }, [orderNumber]);
+    // Only this browser's own order, and only from its private link, so a shared computer never
+    // shows the previous customer's receipt to someone who types in a bare order number.
+    if (parsed.orderNumber === orderNumber && parsed.orderId && parsed.orderId === orderRef) setLastOrder(parsed);
+  }, [orderNumber, orderRef]);
 
   return (
     <div className="mt-3 rounded-lg bg-white p-5 text-left shadow-warm">

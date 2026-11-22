@@ -1,4 +1,4 @@
-import { isStoreOpen } from "@/lib/order-rules";
+import { isPastClosingTime } from "@/lib/order-rules";
 import { activeOrderStatuses } from "@/lib/order-status";
 import { easternDateKey } from "@/lib/operations";
 
@@ -20,11 +20,13 @@ export function addEasternDays(dateKey: string, days: number) {
 // hours (see lib/order-rules.ts storeWindow — these vary by day: 10pm Mon-Thu/Sun, 10:30pm
 // Fri-Sat) say it's currently closed. This is deliberately the physical store hours, not the
 // earlier online-ordering cutoff, since a customer can still be picking up an already-placed
-// order right up until the store itself closes. While the store is open, today stays excluded
-// (its orders are still in progress); the moment real hours say it's closed, today is included.
+// order right up until the store itself closes. Today is included only once today's closing time
+// has passed. Before opening (including the midnight cron, which runs on the new date) the store
+// is also closed, but today has not happened yet: including it would close every order scheduled
+// for later today before the kitchen ever saw it.
 export function currentAutoPickupCutoff(now = new Date()) {
   const today = easternDateKey(now);
-  return isStoreOpen(now) ? today : addEasternDays(today, 1);
+  return isPastClosingTime(now) ? addEasternDays(today, 1) : today;
 }
 
 // The cutoff is exclusive: an order is only closed once its entire business date (creation AND
