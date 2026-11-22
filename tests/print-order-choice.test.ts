@@ -23,3 +23,14 @@ test("reprints prefer today's order and refuse an older guess", () => {
   assert.deepEqual(chooseOrderToPrint([pastDone, { ...pastDone, id: "older" }], now), { ambiguous: true });
   assert.equal(chooseOrderToPrint([], now), null);
 });
+
+test("the order the admin page asked for is printed even when the number is shared", () => {
+  assert.deepEqual(chooseOrderToPrint([today, scheduledEarlier], now, "scheduled"), { order: scheduledEarlier });
+  assert.deepEqual(chooseOrderToPrint([today, scheduledEarlier], now, "today"), { order: today });
+  assert.deepEqual(chooseOrderToPrint([pastDone, { ...pastDone, id: "older" }], now, "older"), { order: { ...pastDone, id: "older" } });
+});
+
+test("a requested order that doesn't have the number falls back to the normal rules", () => {
+  assert.deepEqual(chooseOrderToPrint([today, scheduledEarlier], now, "someone-else"), { ambiguous: true });
+  assert.deepEqual(chooseOrderToPrint([today, pastDone], now, "someone-else"), { order: today });
+});

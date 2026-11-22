@@ -226,6 +226,7 @@ export async function POST(request: Request) {
   const savedTotals = { ...finalTotals, promoCode };
   try {
     await appendOrderToGoogleSheets({
+      orderId: order.id,
       orderNumber,
       createdAt: new Date(),
       customer: body.customer,

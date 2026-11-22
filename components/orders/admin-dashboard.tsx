@@ -12,6 +12,7 @@ import { menuItems } from "@/data/menu";
 import { restaurant } from "@/lib/restaurant";
 import { PromoManager } from "@/components/orders/promo-manager";
 import { SpecialOffersManager } from "@/components/orders/special-offers-manager";
+import { rememberOrderToPrint } from "@/lib/print-intent";
 import type { CartCustomization, CartItem, LunchRiceChoice, LunchSideChoice, MenuItem, MenuPriceKey, OrderStatus, PaymentMethod, PaymentStatus, PickupTimeType } from "@/types";
 
 type AdminOrder = {
@@ -376,7 +377,18 @@ function normalizeAdminOrder(order: AdminOrder): AdminOrder {
   return { ...order, status: normalizeOrderStatus(order.status) };
 }
 
-function bridgePrintOrder(orderNumber: string) {
+// One tablet print at a time: each print points the shared print cookie at its own order, so a
+// second print must not start until the first has fetched its ticket and reported back.
+let bridgePrintQueue: Promise<unknown> = Promise.resolve();
+
+function bridgePrintOrder(order: { id?: string | null; order_number: string }) {
+  const run = () => sendBridgePrint(order);
+  const result = bridgePrintQueue.then(run, run);
+  bridgePrintQueue = result.catch(() => undefined);
+  return result;
+}
+
+function sendBridgePrint({ id, order_number: orderNumber }: { id?: string | null; order_number: string }) {
   return new Promise<string>((resolve, reject) => {
     const bridge = window.AndroidPrintBridge;
     if (!bridge?.printOrderWithRequest) {
@@ -404,6 +416,7 @@ function bridgePrintOrder(orderNumber: string) {
 
     window.addEventListener("cd-bridge-print-result", onResult as EventListener);
     try {
+      rememberOrderToPrint(id);
       bridge.printOrderWithRequest(orderNumber, requestId);
     } catch (error) {
       window.clearTimeout(timeout);
@@ -864,7 +877,7 @@ export function AdminDashboard() {
     // orders that happen to share a number (see orderKey) never get conflated.
     setNetworkPrintingOrders((current) => new Set(current).add(key));
     try {
-      const message = await bridgePrintOrder(order.order_number);
+      const message = await bridgePrintOrder(order);
       saveKitchenPrintState(key, {
         status: "printed",
         message,
@@ -884,6 +897,18 @@ export function AdminDashboard() {
       });
     }
   }, [saveKitchenPrintState]);
+
+  // The tablet app adds its own "Print to Epson" button to each order card and calls the printer
+  // with just the number. Catch that tap first (capture phase) and point the print cookie at the
+  // card's exact order.
+  useEffect(() => {
+    function onTabletPrintButton(event: MouseEvent) {
+      const button = event.target instanceof Element ? event.target.closest(".cd-print-btn") : null;
+      if (button) rememberOrderToPrint(button.closest("article")?.getAttribute("data-order-id"));
+    }
+    document.addEventListener("click", onTabletPrintButton, true);
+    return () => document.removeEventListener("click", onTabletPrintButton, true);
+  }, []);
 
   useEffect(() => {
     if (!printStatusLoaded) return;
@@ -1214,6 +1239,7 @@ export function AdminDashboard() {
       <article
         key={key}
         data-order-number={order.order_number}
+        data-order-id={order.id ?? undefined}
         onClick={() => setSelectedOrderKey(key)}
         className={`focus-ring cursor-pointer rounded-lg border px-3 py-2 shadow-sm transition hover:shadow-md ${cardTone}`}
       >

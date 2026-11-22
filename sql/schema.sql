@@ -207,12 +207,20 @@ begin
 end;
 $$;
 
+-- Wrong admin passwords per hashed network address (lib/login-throttle.ts).
+create table if not exists public.admin_login_attempts (
+  key text primary key,
+  failures integer not null default 0,
+  window_started_at timestamptz not null default now()
+);
+
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 alter table public.operational_settings enable row level security;
 alter table public.phone_verifications enable row level security;
 alter table public.promo_codes enable row level security;
 alter table public.order_number_counters enable row level security;
+alter table public.admin_login_attempts enable row level security;
 
 -- The app uses the service role key on the server for admin reads/writes.
 -- Public browser clients do not receive direct table access by default.

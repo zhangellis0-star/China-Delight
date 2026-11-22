@@ -4,6 +4,7 @@ import { getAdminCookieName, isValidAdminSession } from "@/lib/admin-auth";
 import { printerHost, printerPort } from "@/lib/escpos";
 import { escposTicket } from "@/lib/kitchen-ticket";
 import { chooseOrderToPrint } from "@/lib/print-order-choice";
+import { printIntentCookie } from "@/lib/print-intent";
 import type { PrintOrder } from "@/lib/kitchen-ticket";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
@@ -16,12 +17,23 @@ function adminAuthorized() {
   return isValidAdminSession(cookies().get(getAdminCookieName())?.value);
 }
 
-async function orderNumberFromRequest(request: Request) {
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function printRequest(request: Request) {
+  let orderNumber = "";
+  let orderId = "";
   if (request.method === "GET") {
-    return new URL(request.url).searchParams.get("orderNumber")?.trim() ?? "";
+    const params = new URL(request.url).searchParams;
+    orderNumber = params.get("orderNumber")?.trim() ?? "";
+    orderId = params.get("orderId")?.trim() ?? "";
+  } else {
+    const body = (await request.json().catch(() => ({}))) as { orderNumber?: unknown; orderId?: unknown };
+    orderNumber = typeof body.orderNumber === "string" ? body.orderNumber.trim() : "";
+    orderId = typeof body.orderId === "string" ? body.orderId.trim() : "";
   }
-  const body = (await request.json().catch(() => ({}))) as { orderNumber?: string };
-  return body.orderNumber?.trim() ?? "";
+  // An explicit id wins; otherwise the id the admin page just stored for the tablet's request.
+  const requestedId = orderId || (cookies().get(printIntentCookie)?.value ?? "");
+  return { orderNumber, requestedId: uuidPattern.test(requestedId) ? requestedId : null };
 }
 
 async function payloadResponse(request: Request) {
@@ -29,14 +41,15 @@ async function payloadResponse(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const orderNumber = await orderNumberFromRequest(request);
+  const { orderNumber, requestedId } = await printRequest(request);
   if (!orderNumber) return NextResponse.json({ error: "Missing order number." }, { status: 400 });
 
   const supabase = getSupabaseAdmin();
   if (!supabase) return NextResponse.json({ error: "Supabase is not configured." }, { status: 400 });
 
   // order_number resets daily and is not globally unique (see sql/schema.sql), so more than one
-  // order can match. chooseOrderToPrint refuses rather than guess.
+  // order can match. The requested id must also carry the number, so a stale cookie can't print
+  // an unrelated order; without it chooseOrderToPrint refuses rather than guess.
   const { data: matches, error } = await supabase
     .from("orders")
     .select("*, order_items(*)")
@@ -45,7 +58,7 @@ async function payloadResponse(request: Request) {
     .limit(20);
 
   if (error) return NextResponse.json({ error: "Order lookup failed." }, { status: 500 });
-  const choice = chooseOrderToPrint(matches ?? []);
+  const choice = chooseOrderToPrint(matches ?? [], new Date(), requestedId);
   if (!choice) return NextResponse.json({ error: "Order not found." }, { status: 404 });
   if ("ambiguous" in choice) {
     return NextResponse.json({ error: `More than one order has number ${orderNumber}. Check the order on screen and write the ticket by hand.` }, { status: 409 });

@@ -306,6 +306,7 @@ export async function PATCH(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await updateOrderStatusInGoogleSheets({
+    orderId: updatedOrder.id,
     orderNumber: updatedOrder.order_number,
     createdAt: updatedOrder.created_at ? new Date(updatedOrder.created_at) : undefined,
     oldStatus: previousStatus,

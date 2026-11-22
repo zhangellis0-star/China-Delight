@@ -34,10 +34,14 @@ const orderHeaders = [
   "Customer Notes",
   "Test Order?",
   "Cancelled?",
-  "Count Toward Sales?"
+  "Count Toward Sales?",
+  "Order ID"
 ];
+const orderIdHeader = "Order ID";
+const lastColumn = columnLetter(orderHeaders.length - 1);
 
 export type GoogleSheetsOrderSyncInput = {
+  orderId: string;
   orderNumber: string;
   createdAt: Date;
   customer: CheckoutCustomer;
@@ -50,6 +54,9 @@ export type GoogleSheetsOrderSyncInput = {
 };
 
 export type GoogleSheetsStatusSyncInput = {
+  // The order's unique id, matched against the Order ID column. Rows written before that column
+  // existed have no id, so they fall back to the number plus createdAt's Eastern date.
+  orderId?: string;
   orderNumber: string;
   // When the order was created. Numbers repeat every day, so the row must match this Eastern
   // date as well as the number; without it the newest row with the number is used.
@@ -178,13 +185,27 @@ function specialOfferSummary(items: CartItem[], explicitLabel?: string | null) {
 }
 
 async function ensureHeaders(spreadsheetId: string, sheetName: string, token: string, signal?: AbortSignal) {
-  const headersRange = sheetRange(sheetName, "A1:Y1");
+  const headersRange = sheetRange(sheetName, `A1:${lastColumn}1`);
   const current = await fetchWithSignal(sheetsUrl(spreadsheetId, headersRange), {
     headers: { Authorization: `Bearer ${token}` }
   }, signal);
   if (!current.ok) throw new Error(`Google Sheets header read failed with status ${current.status}.`);
   const data = (await current.json()) as { values?: string[][] };
-  if (data.values?.[0]?.length) return;
+  const existing = data.values?.[0] ?? [];
+  if (existing.length) {
+    // Sheets made before the Order ID column get just that header added, and only into an empty
+    // cell, so nothing someone typed there is overwritten.
+    if (existing.length < orderHeaders.length) {
+      const idCell = sheetRange(sheetName, `${lastColumn}1`);
+      const added = await fetchWithSignal(sheetsUrl(spreadsheetId, idCell, "?valueInputOption=RAW"), {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ values: [[orderIdHeader]] })
+      }, signal);
+      if (!added.ok) throw new Error(`Google Sheets header write failed with status ${added.status}.`);
+    }
+    return;
+  }
   const response = await fetchWithSignal(sheetsUrl(spreadsheetId, headersRange, "?valueInputOption=RAW"), {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -228,14 +249,15 @@ async function appendOrder(input: GoogleSheetsOrderSyncInput, signal?: AbortSign
     input.customer.notes ?? "",
     yesNo(isTestOrder),
     yesNo(isCancelled),
-    yesNo(!isTestOrder && !isCancelled)
+    yesNo(!isTestOrder && !isCancelled),
+    input.orderId
   ];
 
   // Google Sheets append must be POST .../values/{range}:append — the ":append" suffix is
   // required. A plain POST to /values/{range} is not a valid method and returns 404, which is
   // why no rows were appended even though the header read/update (GET/PUT) succeeded. The
   // ":append" must sit after the encoded range but before the query string.
-  const appendUrl = `${sheetsApiBase}/${encodeURIComponent(config.spreadsheetId)}/values/${encodeURIComponent(sheetRange(config.sheetName, "A:Y"))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const appendUrl = `${sheetsApiBase}/${encodeURIComponent(config.spreadsheetId)}/values/${encodeURIComponent(sheetRange(config.sheetName, `A:${lastColumn}`))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
   const response = await fetchWithSignal(appendUrl, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -285,7 +307,16 @@ async function updateOrderStatus(input: GoogleSheetsStatusSyncInput, signal?: Ab
   // same number. Rows are appended in creation order. With a creation time, only a row created on
   // that Eastern date matches; a number-only match could rewrite another day's order.
   let rowOffset = orderNumbers.lastIndexOf(input.orderNumber);
-  if (input.createdAt) {
+  const idIndex = headerIndex(headers, [orderIdHeader], -1);
+  let idOffset = -1;
+  if (input.orderId && idIndex >= 0) {
+    const idColumn = columnLetter(idIndex);
+    const idData = await readValues(config.spreadsheetId, sheetRange(config.sheetName, `${idColumn}2:${idColumn}`), token, signal);
+    idOffset = (idData.values ?? []).findIndex((row) => String(row[0] ?? "").trim() === input.orderId);
+  }
+  if (idOffset >= 0) {
+    rowOffset = idOffset;
+  } else if (input.createdAt) {
     const createdIndex = headerIndex(headers, ["Created Date/Time"], orderHeaders.indexOf("Created Date/Time"));
     const createdColumn = columnLetter(createdIndex);
     const createdData = await readValues(config.spreadsheetId, sheetRange(config.sheetName, `${createdColumn}2:${createdColumn}`), token, signal);

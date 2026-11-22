@@ -32,6 +32,7 @@ export async function runAutoPickupSweep(supabase: NonNullable<ReturnType<typeof
   await Promise.allSettled(
     updatedCandidates.map((order) =>
       updateOrderStatusInGoogleSheets({
+        orderId: order.id,
         orderNumber: order.order_number,
         createdAt: order.created_at ? new Date(order.created_at) : undefined,
         oldStatus: order.status,
